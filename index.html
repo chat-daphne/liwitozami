@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>LIWITOZAMI — AI Trading Signals</title>
+  <meta name="description" content="Real-time AI-powered stock trading signals dashboard" />
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { background: #080A0C; height: 100%; overflow: hidden; }
+    ::-webkit-scrollbar { display: none; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+    @keyframes pulseDot { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+    input, button { font-family: inherit; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const DEFAULT_TICKERS = [
+      { symbol:"AAPL", name:"Apple",     base:189.50, shares:5.2  },
+      { symbol:"TSLA", name:"Tesla",     base:248.30, shares:2.1  },
+      { symbol:"NVDA", name:"NVIDIA",    base:875.20, shares:0.8  },
+      { symbol:"MSFT", name:"Microsoft", base:415.80, shares:3.0  },
+      { symbol:"BTC",  name:"Bitcoin",   base:67840,  shares:0.04 },
+      { symbol:"META", name:"Meta",      base:512.30, shares:1.6  },
+    ];
+
+    const STOCK_LIST = [
+      {symbol:"AMZN",name:"Amazon",base:198.70},
+      {symbol:"GOOGL",name:"Alphabet (Google)",base:178.40},
+      {symbol:"NFLX",name:"Netflix",base:628.00},
+      {symbol:"AMD",name:"Advanced Micro Devices",base:162.50},
+      {symbol:"INTC",name:"Intel",base:31.20},
+      {symbol:"QCOM",name:"Qualcomm",base:172.00},
+      {symbol:"DIS",name:"Disney",base:111.50},
+      {symbol:"PYPL",name:"PayPal",base:62.30},
+      {symbol:"UBER",name:"Uber",base:78.90},
+      {symbol:"LYFT",name:"Lyft",base:14.20},
+      {symbol:"SNAP",name:"Snap",base:11.40},
+      {symbol:"PINS",name:"Pinterest",base:34.60},
+      {symbol:"SPOT",name:"Spotify",base:312.00},
+      {symbol:"ROKU",name:"Roku",base:68.50},
+      {symbol:"HOOD",name:"Robinhood",base:19.80},
+      {symbol:"COIN",name:"Coinbase",base:224.00},
+      {symbol:"PLTR",name:"Palantir",base:24.60},
+      {symbol:"RIVN",name:"Rivian",base:13.20},
+      {symbol:"F",name:"Ford",base:12.80},
+      {symbol:"GM",name:"General Motors",base:46.20},
+      {symbol:"BA",name:"Boeing",base:188.00},
+      {symbol:"LMT",name:"Lockheed Martin",base:468.00},
+      {symbol:"GE",name:"GE Aerospace",base:162.00},
+      {symbol:"XOM",name:"ExxonMobil",base:112.00},
+      {symbol:"CVX",name:"Chevron",base:154.00},
+      {symbol:"JPM",name:"JPMorgan Chase",base:196.00},
+      {symbol:"BAC",name:"Bank of America",base:38.50},
+      {symbol:"GS",name:"Goldman Sachs",base:462.00},
+      {symbol:"WFC",name:"Wells Fargo",base:57.00},
+      {symbol:"V",name:"Visa",base:276.00},
+      {symbol:"MA",name:"Mastercard",base:468.00},
+      {symbol:"WMT",name:"Walmart",base:68.00},
+      {symbol:"TGT",name:"Target",base:152.00},
+      {symbol:"COST",name:"Costco",base:788.00},
+      {symbol:"HD",name:"Home Depot",base:342.00},
+      {symbol:"NKE",name:"Nike",base:94.00},
+      {symbol:"SBUX",name:"Starbucks",base:92.00},
+      {symbol:"MCD",name:"McDonald's",base:294.00},
+      {symbol:"KO",name:"Coca-Cola",base:62.00},
+      {symbol:"PEP",name:"PepsiCo",base:168.00},
+      {symbol:"JNJ",name:"Johnson & Johnson",base:152.00},
+      {symbol:"PFE",name:"Pfizer",base:27.50},
+      {symbol:"MRNA",name:"Moderna",base:98.00},
+      {symbol:"LLY",name:"Eli Lilly",base:764.00},
+      {symbol:"ABBV",name:"AbbVie",base:168.00},
+      {symbol:"UNH",name:"UnitedHealth",base:528.00},
+      {symbol:"T",name:"AT&T",base:17.50},
+      {symbol:"VZ",name:"Verizon",base:41.00},
+      {symbol:"CRM",name:"Salesforce",base:274.00},
+      {symbol:"ORCL",name:"Oracle",base:124.00},
+      {symbol:"IBM",name:"IBM",base:188.00},
+      {symbol:"ADBE",name:"Adobe",base:472.00},
+      {symbol:"NOW",name:"ServiceNow",base:762.00},
+      {symbol:"SNOW",name:"Snowflake",base:148.00},
+      {symbol:"ZM",name:"Zoom",base:68.00},
+      {symbol:"SHOP",name:"Shopify",base:72.00},
+      {symbol:"ETSY",name:"Etsy",base:68.00},
+      {symbol:"ABNB",name:"Airbnb",base:148.00},
+      {symbol:"DAL",name:"Delta Airlines",base:46.00},
+      {symbol:"UAL",name:"United Airlines",base:48.00},
+      {symbol:"AAL",name:"American Airlines",base:14.20},
+      {symbol:"CCL",name:"Carnival",base:18.40},
+      {symbol:"DKNG",name:"DraftKings",base:38.00},
+      {symbol:"RBLX",name:"Roblox",base:38.00},
+      {symbol:"EA",name:"Electronic Arts",base:132.00},
+      {symbol:"MU",name:"Micron Technology",base:88.00},
+      {symbol:"TXN",name:"Texas Instruments",base:172.00},
+      {symbol:"ARM",name:"Arm Holdings",base:128.00},
+      {symbol:"SOFI",name:"SoFi Technologies",base:8.40},
+      {symbol:"AFRM",name:"Affirm",base:38.00},
+      {symbol:"SQ",name:"Block Inc",base:74.80},
+      {symbol:"MS",name:"Morgan Stanley",base:96.00},
+      {symbol:"C",name:"Citigroup",base:63.00},
+      {symbol:"ETH",name:"Ethereum",base:3542.00},
+      {symbol:"SOL",name:"Solana",base:168.90},
+      {symbol:"XRP",name:"Ripple",base:0.52},
+      {symbol:"DOGE",name:"Dogecoin",base:0.08},
+      {symbol:"LCID",name:"Lucid Motors",base:3.10},
+      {symbol:"NIO",name:"NIO Inc",base:5.40},
+      {symbol:"SCHW",name:"Charles Schwab",base:68.00},
+      {symbol:"BLK",name:"BlackRock",base:788.00},
+      {symbol:"SMCI",name:"Super Micro Computer",base:824.00},
+      {symbol:"SOUN",name:"SoundHound AI",base:8.20},
+    ];
+
+    const TICKER_COLORS = {
+      AAPL:"#A8D8EA", TSLA:"#E84040", NVDA:"#76B900", MSFT:"#00A4EF",
+      BTC:"#F7931A",  ETH:"#627EEA",  SOL:"#9945FF",  META:"#1877F2",
+      AMZN:"#FF9900", GOOGL:"#FBBC04",NFLX:"#E50914", AMD:"#ED1C24",
+      COIN:"#0052FF", PLTR:"#6400FF", XRP:"#00AAE4",  DOGE:"#C2A633",
+    };
+
+    function getTickerColor(symbol) {
+      return TICKER_COLORS[symbol] || "#00C9FF";
+    }
+
+    function calcEMA(prices, period) {
+      if (prices.length < period) return prices[prices.length - 1] || 0;
+      const multiplier = 2 / (period + 1);
+      let result = prices.slice(0, period).reduce((a, v) => a + v) / period;
+      for (let i = period; i < prices.length; i++) {
+        result = prices[i] * multiplier + result * (1 - multiplier);
+      }
+      return result;
+    }
+
+    function calcRSI(prices, period) {
+      period = period || 14;
+      if (prices.length < period + 1) return 50;
+      const slice = prices.slice(-period - 1);
+      const changes = [];
+      for (let i = 1; i < slice.length; i++) changes.push(slice[i] - slice[i-1]);
+      const gains = changes.filter(c => c > 0).reduce((a, v) => a + v, 0) / period;
+      const losses = changes.filter(c => c < 0).map(Math.abs).reduce((a, v) => a + v, 0) / period;
+      return losses === 0 ? 100 : 100 - 100 / (1 + gains / losses);
+    }
+
+    function calcBB(prices, period) {
+      period = period || 20;
+      if (prices.length < period) {
+        const last = prices[prices.length - 1] || 0;
+        return { upper: last, lower: last };
+      }
+      const slice = prices.slice(-period);
+      const mean = slice.reduce((a, v) => a + v) / period;
+      const std = Math.sqrt(slice.reduce((a, v) => a + Math.pow(v - mean, 2), 0) / period);
+      return { upper: mean + 2 * std, lower: mean - 2 * std };
+    }
+
+    function getSignal(price, prices) {
+      const ema9  = calcEMA(prices, 9);
+      const ema20 = calcEMA(prices, 20);
+      const rsiVal = calcRSI(prices);
+      const bands  = calcBB(prices);
+      const volUp  = Math.random() > 0.4;
+      let bull = 0, bear = 0;
+      if (ema9 > ema20 * 1.001)      bull += 3;
+      else if (ema9 < ema20 * 0.999) bear += 3;
+      if (rsiVal < 35)       bull += 3;
+      else if (rsiVal > 65)  bear += 3;
+      else if (rsiVal < 50)  bull += 1;
+      else                   bear += 1;
+      if (price <= bands.lower * 1.005)      bull += 2;
+      else if (price >= bands.upper * 0.995) bear += 2;
+      if (volUp) bull += 2; else bear += 2;
+      const total   = bull + bear;
+      const bullPct = Math.round(bull / total * 100);
+      const conf    = Math.max(bullPct, 100 - bullPct);
+      if (bullPct >= 75) return { action:"BUY",  color:"#00E676", conf };
+      if (bullPct <= 25) return { action:"SELL", color:"#FF3D57", conf };
+      return                    { action:"HOLD", color:"#FFB800", conf };
+    }
+
+    function buildPriceHistory(base, symbol) {
+      const seed = symbol.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+      let price = base;
+      const history = [];
+      for (let i = 0; i < 60; i++) {
+        price *= 1 + Math.sin(i / 8 + seed) * 0.012 + (Math.random() - 0.5) * 0.005;
+        history.push(price);
+      }
+      return history;
+    }
+
+    function simulatePrice(base, tick, symbol) {
+      const seed = symbol.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+      return base * (1 + Math.sin(tick / 70 + seed) * 0.009 + (Math.random() - 0.5) * 0.004);
+    }
+
+    function formatUSD(num) {
+      return "$" + Math.abs(num).toLocaleString("en-US", { minimumFractionDigits:2, maximumFractionDigits:2 });
+    }
+
+    function formatPct(current, previous) {
+      const pct = ((current - previous) / Math.abs(previous)) * 100;
+      return { text: (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%", positive: pct >= 0 };
+    }
+
+    function SparkLine({ prices, strokeColor }) {
+      if (!prices || prices.length < 2) return null;
+      const W = 54, H = 24;
+      const minP = Math.min.apply(null, prices);
+      const range = Math.max.apply(null, prices) - minP || 1;
+      const points = prices.map((v, i) =>
+        (i / (prices.length - 1)) * W + "," + (H - ((v - minP) / range) * (H - 4) - 2)
+      ).join(" ");
+      return React.createElement("svg", { width:W, height:H, viewBox:"0 0 "+W+" "+H, preserveAspectRatio:"none" },
+        React.createElement("polyline", { points, fill:"none", stroke:strokeColor, strokeWidth:"1.8", strokeLinejoin:"round" })
+      );
+    }
+
+    function DetailChart({ prices, signal }) {
+      if (!prices || prices.length < 2) return null;
+      const W = 360, H = 128;
+      const minP = Math.min.apply(null, prices);
+      const range = Math.max.apply(null, prices) - minP || 1;
+      const toX = i => (i / (prices.length - 1)) * W;
+      const toY = v => H - ((v - minP) / range) * (H - 14) - 7;
+      const pointStr = prices.map((v, i) => toX(i) + "," + toY(v)).join(" ");
+      const lastX = toX(prices.length - 1);
+      const lastY = toY(prices[prices.length - 1]);
+      const lc = signal.color;
+      const isBuy = signal.action === "BUY";
+      const pathD = "M0," + H + " L" + pointStr.split(" ").join(" L") + " L" + W + "," + H + " Z";
+      return React.createElement("svg", {
+        width:"100%", height:H,
+        viewBox:"0 0 "+W+" "+H,
+        preserveAspectRatio:"none",
+        style:{ display:"block" }
+      },
+        React.createElement("defs", null,
+          React.createElement("linearGradient", { id:"chartGrad", x1:"0", y1:"0", x2:"0", y2:"1" },
+            React.createElement("stop", { offset:"0%", stopColor:lc, stopOpacity:"0.18" }),
+            React.createElement("stop", { offset:"100%", stopColor:lc, stopOpacity:"0" })
+          )
+        ),
+        React.createElement("path", { d:pathD, fill:"url(#chartGrad)" }),
+        React.createElement("polyline", { points:pointStr, fill:"none", stroke:lc, strokeWidth:"2.4", strokeLinejoin:"round" }),
+        React.createElement("circle", { cx:lastX, cy:lastY, r:"5", fill:lc }),
+        React.createElement("circle", { cx:lastX, cy:lastY, r:"11", fill:lc, fillOpacity:"0.14" }),
+        signal.action !== "HOLD" && React.createElement(React.Fragment, null,
+          React.createElement("rect", { x:lastX-32, y:isBuy ? lastY+14 : lastY-32, width:64, height:18, rx:5, fill:lc }),
+          React.createElement("text", { x:lastX, y:isBuy ? lastY+27 : lastY-19, textAnchor:"middle", fontSize:"9", fontWeight:"800", fill:"#000", fontFamily:"sans-serif" },
+            signal.action + " " + signal.conf + "%"
+          )
+        )
+      );
+    }
+
+    function BottomSheet({ onClose, children }) {
+      return React.createElement("div", {
+        style:{ position:"fixed", inset:0, background:"rgba(0,0,0,0.9)", backdropFilter:"blur(14px)", zIndex:500, display:"flex", alignItems:"flex-end" },
+        onClick: e => e.target === e.currentTarget && onClose()
+      },
+        React.createElement("div", {
+          style:{ width:"100%", maxWidth:430, margin:"0 auto", background:"#1C1E22", borderRadius:"20px 20px 0 0", padding:"18px 18px 44px", maxHeight:"92vh", overflowY:"auto" }
+        },
+          React.createElement("div", { style:{ width:36, height:4, borderRadius:2, background:"rgba(255,255,255,0.15)", margin:"0 auto 16px" } }),
+          children
+        )
+      );
+    }
+
+    function App() {
+      const [activeTab,    setActiveTab]    = useState("home");
+      const [detailSymbol, setDetailSymbol] = useState(null);
+      const [toastMsg,     setToastMsg]     = useState(null);
+      const [cashBalance,  setCashBalance]  = useState(null);
+      const [bankLinked,   setBankLinked]   = useState(false);
+      const [balInput,     setBalInput]     = useState("");
+      const [showBalModal, setShowBalModal] = useState(false);
+      const [tradeModal,   setTradeModal]   = useState(null);
+      const [tradeLog,     setTradeLog]     = useState([]);
+      const [showSearch,   setShowSearch]   = useState(false);
+      const [searchText,   setSearchText]   = useState("");
+      const [watchlist,    setWatchlist]    = useState(function() {
+        return DEFAULT_TICKERS.map(function(t) { return t.symbol; });
+      });
+      const [holdings, setHoldings] = useState(function() {
+        const obj = {};
+        DEFAULT_TICKERS.forEach(function(t) { obj[t.symbol] = { shares: t.shares, avgCost: t.base }; });
+        return obj;
+      });
+      const [portHistory, setPortHistory] = useState(function() {
+        const startVal = DEFAULT_TICKERS.reduce(function(a, t) { return a + t.base * t.shares; }, 0);
+        const arr = [];
+        for (let i = 0; i < 20; i++) arr.push(startVal * (1 + Math.sin(i / 4) * 0.007));
+        return arr;
+      });
+
+      const tickRef = useRef(0);
+
+      const allAvailable = DEFAULT_TICKERS.concat(
+        STOCK_LIST.filter(function(s) {
+          return !DEFAULT_TICKERS.find(function(d) { return d.symbol === s.symbol; });
+        })
+      );
+
+      const [tickerData, setTickerData] = useState(function() {
+        return DEFAULT_TICKERS.map(function(t) {
+          const ph = buildPriceHistory(t.base, t.symbol);
+          const cp = ph[ph.length - 1];
+          return Object.assign({}, t, { price: cp, priceHistory: ph, signal: getSignal(cp, ph) });
+        });
+      });
+
+      function showToast(msg) {
+        setToastMsg(msg);
+        setTimeout(function() { setToastMsg(null); }, 4000);
+      }
+
+      function addToWatchlist(stock) {
+        if (watchlist.indexOf(stock.symbol) !== -1) {
+          showToast(stock.symbol + " already in watchlist");
+          return;
+        }
+        const ph = buildPriceHistory(stock.base, stock.symbol);
+        const cp = ph[ph.length - 1];
+        setTickerData(function(prev) {
+          return prev.concat([Object.assign({}, stock, { price: cp, priceHistory: ph, signal: getSignal(cp, ph) })]);
+        });
+        setWatchlist(function(prev) { return prev.concat([stock.symbol]); });
+        setHoldings(function(prev) {
+          const next = Object.assign({}, prev);
+          next[stock.symbol] = { shares: 0, avgCost: stock.base };
+          return next;
+        });
+        showToast("✅ " + stock.symbol + " added to watchlist!");
+        setShowSearch(false);
+        setSearchText("");
+      }
+
+      function removeFromWatchlist(symbol) {
+        if (DEFAULT_TICKERS.find(function(t) { return t.symbol === symbol; })) {
+          showToast("Can't remove default tickers");
+          return;
+        }
+        setTickerData(function(prev) { return prev.filter(function(t) { return t.symbol !== symbol; }); });
+        setWatchlist(function(prev) { return prev.filter(function(s) { return s !== symbol; }); });
+        if (detailSymbol === symbol) setDetailSymbol(null);
+        showToast(symbol + " removed");
+      }
+
+      useEffect(function() {
+        const id = setInterval(function() {
+          tickRef.current++;
+          setTickerData(function(prev) {
+            const updated = prev.map(function(t) {
+              const np = simulatePrice(t.base, tickRef.current, t.symbol);
+              const nh = prev.find(function(x) { return x.symbol === t.symbol; }).priceHistory.slice(-59).concat([np]);
+              return Object.assign({}, t, { price: np, priceHistory: nh, signal: getSignal(np, nh) });
+            });
+            setPortHistory(function(ph) {
+              return ph.slice(-49).concat([
+                updated.reduce(function(acc, t) {
+                  return acc + t.price * (holdings[t.symbol] ? holdings[t.symbol].shares : 0);
+                }, 0)
+              ]);
+            });
+            return updated;
+          });
+        }, 20000);
+        return function() { clearInterval(id); };
+      }, [holdings]);
+
+      const portfolioValue  = tickerData.reduce(function(a, t) { return a + t.price * (holdings[t.symbol] ? holdings[t.symbol].shares : 0); }, 0);
+      const portfolioCost   = tickerData.reduce(function(a, t) { return a + (holdings[t.symbol] ? holdings[t.symbol].avgCost * holdings[t.symbol].shares : 0); }, 0);
+      const portfolioChange = formatPct(portfolioValue, portfolioCost || 1);
+      const selectedTicker  = tickerData.find(function(t) { return t.symbol === detailSymbol; });
+
+      function handleBuy(ticker, e) {
+        if (e) e.stopPropagation();
+        if (!bankLinked) return showToast("Add funds first 💰");
+        const qty  = parseFloat(((cashBalance * 0.05) / ticker.price).toFixed(6));
+        const cost = parseFloat((qty * ticker.price).toFixed(2));
+        if (cost > cashBalance) return showToast("Insufficient funds");
+        setTradeModal({ ticker, qty, cost, isBuy: true });
+      }
+
+      function handleSell(ticker, e) {
+        if (e) e.stopPropagation();
+        const pos = holdings[ticker.symbol];
+        if (!pos || pos.shares <= 0) return showToast("No " + ticker.symbol + " to sell");
+        setTradeModal({ ticker, qty: pos.shares, cost: parseFloat((pos.shares * ticker.price).toFixed(2)), isBuy: false });
+      }
+
+      function confirmTrade() {
+        if (!tradeModal) return;
+        const { ticker, qty, cost, isBuy } = tradeModal;
+        setTradeLog(function(prev) {
+          return [{
+            id: Date.now(),
+            symbol: ticker.symbol,
+            type: isBuy ? "BUY" : "SELL",
+            qty: qty.toFixed(4),
+            price: formatUSD(ticker.price),
+            total: formatUSD(cost),
+            time: new Date().toLocaleTimeString()
+          }].concat(prev.slice(0, 99));
+        });
+        if (isBuy) {
+          setCashBalance(function(prev) { return parseFloat((prev - cost).toFixed(2)); });
+          setHoldings(function(prev) {
+            const cur = prev[ticker.symbol] || { shares: 0, avgCost: ticker.price };
+            const ns  = cur.shares + qty;
+            const next = Object.assign({}, prev);
+            next[ticker.symbol] = { shares: ns, avgCost: (cur.shares * cur.avgCost + qty * ticker.price) / ns };
+            return next;
+          });
+          showToast("✅ Bought " + qty.toFixed(4) + " " + ticker.symbol);
+        } else {
+          setCashBalance(function(prev) { return parseFloat((prev + cost).toFixed(2)); });
+          setHoldings(function(prev) {
+            const next = Object.assign({}, prev);
+            next[ticker.symbol] = { shares: 0, avgCost: 0 };
+            return next;
+          });
+          showToast("💰 Sold " + ticker.symbol + " — " + formatUSD(cost));
+        }
+        setTradeModal(null);
+      }
+
+      const searchResults = searchText.length >= 1
+        ? allAvailable.filter(function(s) {
+            return s.symbol.toLowerCase().indexOf(searchText.toLowerCase()) !== -1 ||
+                   s.name.toLowerCase().indexOf(searchText.toLowerCase()) !== -1;
+          }).slice(0, 10)
+        : [];
+
+      const SECTORS = [
+        { label:"🏦 Finance",   syms:["JPM","BAC","GS","V","MA","SCHW","BLK","C","MS","WFC"] },
+        { label:"⚕️ Healthcare", syms:["JNJ","PFE","MRNA","LLY","UNH","ABBV"] },
+        { label:"⚡ Energy",     syms:["XOM","CVX"] },
+        { label:"✈️ Travel",     syms:["DAL","UAL","AAL","ABNB","CCL"] },
+        { label:"🛒 Retail",     syms:["WMT","TGT","COST","HD","NKE","ETSY","SHOP"] },
+        { label:"🍔 Food & Bev", syms:["MCD","SBUX","KO","PEP"] },
+        { label:"🚗 Automotive", syms:["F","GM","RIVN","LCID","NIO"] },
+        { label:"🪙 Crypto",     syms:["ETH","SOL","XRP","DOGE","COIN"] },
+      ];
+
+      const card = { background:"#141618", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:14 };
+
+      // ── RENDER ──────────────────────────────────────────────────────────────
+      return React.createElement("div", {
+        style:{ background:"#080A0C", height:"100vh", maxWidth:430, margin:"0 auto", fontFamily:"-apple-system,'SF Pro Display',sans-serif", display:"flex", flexDirection:"column", overflow:"hidden" }
+      },
+
+        // Toast
+        toastMsg && React.createElement("div", {
+          style:{ position:"fixed", top:54, left:"50%", transform:"translateX(-50%)", background:"#1C1E22", border:"1px solid rgba(255,255,255,0.12)", borderRadius:50, padding:"9px 18px", fontSize:13, fontWeight:600, color:"#fff", zIndex:999, whiteSpace:"nowrap", animation:"fadeUp 0.3s ease", boxShadow:"0 6px 24px rgba(0,0,0,0.5)" }
+        }, toastMsg),
+
+        // Trade Modal
+        tradeModal && React.createElement(BottomSheet, { onClose: function() { setTradeModal(null); } },
+          React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:12, marginBottom:16 } },
+            React.createElement("div", { style:{ width:44, height:44, borderRadius:22, background: tradeModal.isBuy ? "#00E676" : "#FF3D57", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, color:"#000", fontWeight:900 } },
+              tradeModal.isBuy ? "↑" : "↓"
+            ),
+            React.createElement("div", null,
+              React.createElement("div", { style:{ fontSize:19, fontWeight:900, color: tradeModal.isBuy ? "#00E676" : "#FF3D57" } }, tradeModal.isBuy ? "Quick Buy" : "Sell All"),
+              React.createElement("div", { style:{ fontSize:12, color:"#6A7585" } }, tradeModal.ticker.symbol + " · " + tradeModal.ticker.name)
+            )
+          ),
+          [
+            { label: tradeModal.isBuy ? "Buying" : "Selling", value: tradeModal.qty.toFixed(4) + " " + tradeModal.ticker.symbol },
+            { label: "Price", value: formatUSD(tradeModal.ticker.price) },
+            { label: tradeModal.isBuy ? "Total Cost" : "You Receive", value: formatUSD(tradeModal.cost) },
+          ].map(function(row, i) {
+            return React.createElement("div", { key:i, style:{ display:"flex", justifyContent:"space-between", padding:"9px 0", borderBottom:"1px solid rgba(255,255,255,0.06)" } },
+              React.createElement("span", { style:{ fontSize:12, color:"#8A8F98" } }, row.label),
+              React.createElement("span", { style:{ fontSize:13, fontWeight:700, color:"#fff" } }, row.value)
+            );
+          }),
+          React.createElement("button", { onClick: confirmTrade, style:{ width:"100%", padding:14, borderRadius:50, background: tradeModal.isBuy ? "#00E676" : "#FF3D57", border:"none", color:"#000", fontSize:14, fontWeight:800, cursor:"pointer", marginTop:16, marginBottom:10 } },
+            "Confirm " + (tradeModal.isBuy ? "Buy" : "Sell")
+          ),
+          React.createElement("button", { onClick: function() { setTradeModal(null); }, style:{ width:"100%", padding:12, borderRadius:50, background:"none", border:"1px solid rgba(255,255,255,0.1)", color:"#8A8F98", fontSize:13, cursor:"pointer" } }, "Cancel")
+        ),
+
+        // Add Funds Modal
+        showBalModal && React.createElement(BottomSheet, { onClose: function() { setShowBalModal(false); } },
+          React.createElement("div", { style:{ fontSize:19, fontWeight:700, color:"#fff", marginBottom:14 } }, "💰 Add Funds"),
+          React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:8, background:"#141618", border:"1px solid rgba(255,255,255,0.1)", borderRadius:12, padding:"12px 16px", marginBottom:14 } },
+            React.createElement("span", { style:{ fontSize:24, fontWeight:800, color:"#00E676" } }, "$"),
+            React.createElement("input", { autoFocus:true, type:"number", value:balInput, onChange: function(e) { setBalInput(e.target.value); }, placeholder:"0.00", style:{ background:"none", border:"none", outline:"none", color:"#fff", fontSize:24, fontWeight:700, width:"100%" } })
+          ),
+          React.createElement("button", {
+            onClick: function() {
+              const amt = parseFloat(balInput);
+              if (!amt || amt <= 0) return showToast("Enter a valid amount");
+              setCashBalance(amt); setBankLinked(true); setShowBalModal(false); setBalInput("");
+              showToast("✓ Balance set: " + formatUSD(amt));
+            },
+            style:{ width:"100%", padding:14, borderRadius:50, background:"#00E676", border:"none", color:"#000", fontSize:14, fontWeight:800, cursor:"pointer", marginBottom:8 }
+          }, "Set Balance"),
+          React.createElement("button", { onClick: function() { setShowBalModal(false); }, style:{ width:"100%", padding:12, borderRadius:50, background:"none", border:"1px solid rgba(255,255,255,0.1)", color:"#8A8F98", fontSize:13, cursor:"pointer" } }, "Cancel")
+        ),
+
+        // Search Modal
+        showSearch && React.createElement(BottomSheet, { onClose: function() { setShowSearch(false); setSearchText(""); } },
+          React.createElement("div", { style:{ fontSize:19, fontWeight:800, color:"#fff", marginBottom:3 } }, "🔍 Add to Watchlist"),
+          React.createElement("div", { style:{ fontSize:12, color:"#6A7585", marginBottom:14 } }, allAvailable.length + "+ stocks & crypto available"),
+          React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:10, background:"#141618", border:"1px solid rgba(255,255,255,0.12)", borderRadius:12, padding:"11px 14px", marginBottom:14 } },
+            React.createElement("span", { style:{ fontSize:15 } }, "🔍"),
+            React.createElement("input", { autoFocus:true, value:searchText, onChange: function(e) { setSearchText(e.target.value); }, placeholder:"Search ticker or company name…", style:{ background:"none", border:"none", outline:"none", color:"#fff", fontSize:14, flex:1 } }),
+            searchText && React.createElement("button", { onClick: function() { setSearchText(""); }, style:{ background:"none", border:"none", color:"#6A7585", fontSize:18, cursor:"pointer", padding:0 } }, "✕")
+          ),
+          !searchText && React.createElement(React.Fragment, null,
+            React.createElement("div", { style:{ fontSize:10, color:"#6A7585", fontWeight:700, letterSpacing:1, marginBottom:10 } }, "POPULAR"),
+            React.createElement("div", { style:{ display:"flex", flexWrap:"wrap", gap:7, marginBottom:18 } },
+              ["AMZN","GOOGL","NFLX","AMD","JPM","V","DIS","COIN","PLTR","LLY","SOFI","ETH","SOL","DOGE"].map(function(sym) {
+                const found = allAvailable.find(function(x) { return x.symbol === sym; });
+                const inList = watchlist.indexOf(sym) !== -1;
+                if (!found) return null;
+                return React.createElement("button", {
+                  key: sym,
+                  onClick: function() { if (!inList) addToWatchlist(found); },
+                  style:{ padding:"7px 13px", borderRadius:20, background: inList ? "rgba(0,230,118,0.1)" : "rgba(255,255,255,0.06)", border:"1px solid " + (inList ? "rgba(0,230,118,0.3)" : "rgba(255,255,255,0.1)"), color: inList ? "#00E676" : "#fff", fontSize:12, fontWeight:700, cursor: inList ? "default" : "pointer" }
+                }, (inList ? "✓ " : "") + sym);
+              })
+            ),
+            SECTORS.map(function(sector) {
+              return React.createElement("div", { key: sector.label, style:{ marginBottom:12 } },
+                React.createElement("div", { style:{ fontSize:11, color:"#8A8F98", fontWeight:700, marginBottom:6 } }, sector.label),
+                React.createElement("div", { style:{ display:"flex", flexWrap:"wrap", gap:6 } },
+                  sector.syms.map(function(sym) {
+                    const found = allAvailable.find(function(x) { return x.symbol === sym; });
+                    const inList = watchlist.indexOf(sym) !== -1;
+                    if (!found) return null;
+                    return React.createElement("button", {
+                      key: sym,
+                      onClick: function() { if (!inList) addToWatchlist(found); },
+                      style:{ padding:"5px 11px", borderRadius:18, background: inList ? "rgba(0,230,118,0.1)" : "rgba(255,255,255,0.05)", border:"1px solid " + (inList ? "rgba(0,230,118,0.25)" : "rgba(255,255,255,0.09)"), color: inList ? "#00E676" : "#C8CDD6", fontSize:11, fontWeight:600, cursor: inList ? "default" : "pointer" }
+                    }, (inList ? "✓ " : "") + sym);
+                  })
+                )
+              );
+            })
+          ),
+          searchText && searchResults.length === 0 && React.createElement("div", { style:{ textAlign:"center", padding:"24px 0", color:"#6A7585", fontSize:13 } }, 'No results for "' + searchText + '"'),
+          searchText && searchResults.map(function(stock, i) {
+            const inList = watchlist.indexOf(stock.symbol) !== -1;
+            const tc = getTickerColor(stock.symbol);
+            return React.createElement("div", {
+              key: i,
+              onClick: function() { if (!inList) addToWatchlist(stock); },
+              style:{ display:"flex", alignItems:"center", gap:12, padding:"11px 12px", borderRadius:12, background:"rgba(255,255,255,0.03)", border:"1px solid " + (inList ? "rgba(0,230,118,0.2)" : "rgba(255,255,255,0.06)"), marginBottom:8, cursor: inList ? "default" : "pointer", animation:"fadeUp 0.2s ease" }
+            },
+              React.createElement("div", { style:{ width:38, height:38, borderRadius:19, background:tc+"18", border:"1.5px solid "+tc+"30", display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, fontWeight:800, color:tc, flexShrink:0 } }, stock.symbol.slice(0,4)),
+              React.createElement("div", { style:{ flex:1, minWidth:0 } },
+                React.createElement("div", { style:{ fontSize:13, fontWeight:700, color:"#fff" } }, stock.symbol),
+                React.createElement("div", { style:{ fontSize:11, color:"#6A7585", marginTop:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" } }, stock.name)
+              ),
+              React.createElement("div", { style:{ fontSize:11, color:"#6A7585", marginRight:4 } }, formatUSD(stock.base)),
+              inList
+                ? React.createElement("div", { style:{ padding:"5px 10px", borderRadius:14, background:"rgba(0,230,118,0.12)", color:"#00E676", fontSize:11, fontWeight:700 } }, "✓")
+                : React.createElement("div", { style:{ padding:"5px 12px", borderRadius:14, background:"rgba(0,201,255,0.12)", color:"#00C9FF", fontSize:11, fontWeight:700 } }, "+ Add")
+            );
+          })
+        ),
+
+        // ═══ HOME TAB ═══════════════════════════════════════════════════════
+        activeTab === "home" && !detailSymbol && React.createElement("div", { style:{ flex:1, overflowY:"auto", paddingBottom:20 } },
+          // Header
+          React.createElement("div", { style:{ padding:"46px 16px 10px", display:"flex", justifyContent:"space-between", alignItems:"center" } },
+            React.createElement("div", null,
+              React.createElement("div", { style:{ fontSize:20, fontWeight:900, color:"#fff", letterSpacing:-0.5 } }, "LIWITOZAMI"),
+              React.createElement("div", { style:{ fontSize:10, color:"#6A7585", marginTop:2 } }, "AI Signals · 20s Updates")
+            ),
+            bankLinked
+              ? React.createElement("div", { style:{ textAlign:"right", cursor:"pointer" }, onClick: function() { setShowBalModal(true); } },
+                  React.createElement("div", { style:{ fontSize:13, fontWeight:700, color:"#00E676" } }, formatUSD(cashBalance)),
+                  React.createElement("div", { style:{ fontSize:9, color:"#6A7585" } }, "Tap to update")
+                )
+              : React.createElement("button", { onClick: function() { setShowBalModal(true); }, style:{ padding:"7px 12px", borderRadius:18, background:"rgba(0,230,118,0.1)", border:"1px solid rgba(0,230,118,0.3)", color:"#00E676", fontSize:11, fontWeight:700, cursor:"pointer" } }, "+ Add Funds")
+          ),
+
+          // Portfolio Card
+          React.createElement("div", { style:{ margin:"0 16px 12px", ...card } },
+            React.createElement("div", { style:{ fontSize:10, color:"#6A7585", marginBottom:3 } }, "Portfolio Value"),
+            React.createElement("div", { style:{ fontSize:28, fontWeight:700, color:"#fff" } }, formatUSD(portfolioValue)),
+            React.createElement("div", { style:{ fontSize:12, fontWeight:600, color: portfolioChange.positive ? "#00E676" : "#FF3D57", marginTop:4 } },
+              (portfolioChange.positive ? "▲" : "▼") + " " + formatUSD(Math.abs(portfolioValue - portfolioCost)) + " (" + portfolioChange.text + ")"
+            ),
+            portHistory.length > 1 && (function() {
+              const W = 360, H = 40;
+              const minV = Math.min.apply(null, portHistory);
+              const rangeV = Math.max.apply(null, portHistory) - minV || 1;
+              const lc = portfolioChange.positive ? "#00E676" : "#FF3D57";
+              const pts = portHistory.map(function(v, i) {
+                return (i / (portHistory.length - 1)) * W + "," + (H - ((v - minV) / rangeV) * (H - 6) - 3);
+              }).join(" ");
+              const pathD = "M0," + H + " L" + pts.split(" ").join(" L") + " L" + W + "," + H + " Z";
+              return React.createElement("svg", { width:"100%", height:H, viewBox:"0 0 "+W+" "+H, preserveAspectRatio:"none", style:{ display:"block", marginTop:10 } },
+                React.createElement("defs", null,
+                  React.createElement("linearGradient", { id:"portGrad", x1:"0", y1:"0", x2:"0", y2:"1" },
+                    React.createElement("stop", { offset:"0%", stopColor:lc, stopOpacity:"0.15" }),
+                    React.createElement("stop", { offset:"100%", stopColor:lc, stopOpacity:"0" })
+                  )
+                ),
+                React.createElement("path", { d:pathD, fill:"url(#portGrad)" }),
+                React.createElement("polyline", { points:pts, fill:"none", stroke:lc, strokeWidth:"1.8", strokeLinejoin:"round" })
+              );
+            })()
+          ),
+
+          // Watchlist Header
+          React.createElement("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0 16px 8px" } },
+            React.createElement("div", { style:{ fontSize:14, fontWeight:700, color:"#fff" } },
+              "Watchlist ",
+              React.createElement("span", { style:{ fontSize:11, color:"#6A7585", fontWeight:400 } }, "(" + tickerData.length + ")")
+            ),
+            React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:8 } },
+              React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:4 } },
+                React.createElement("div", { style:{ width:5, height:5, borderRadius:3, background:"#00E676", animation:"pulseDot 2s infinite" } }),
+                React.createElement("span", { style:{ fontSize:10, color:"#00E676", fontWeight:600 } }, "20s")
+              ),
+              React.createElement("button", { onClick: function() { setShowSearch(true); }, style:{ padding:"6px 12px", borderRadius:18, background:"rgba(0,201,255,0.1)", border:"1px solid rgba(0,201,255,0.3)", color:"#00C9FF", fontSize:11, fontWeight:700, cursor:"pointer" } }, "＋ Add Stock")
+            )
+          ),
+
+          // Ticker Rows
+          tickerData.map(function(ticker, idx) {
+            const pc       = formatPct(ticker.price, ticker.base);
+            const tc       = getTickerColor(ticker.symbol);
+            const sc       = ticker.signal.color;
+            const pos      = holdings[ticker.symbol] || { shares:0, avgCost: ticker.base };
+            const isDef    = DEFAULT_TICKERS.find(function(d) { return d.symbol === ticker.symbol; });
+            return React.createElement("div", { key: ticker.symbol, style:{ borderBottom:"1px solid rgba(255,255,255,0.05)", animation:"fadeUp 0.35s ease both", animationDelay: (idx * 0.04) + "s" } },
+              React.createElement("div", { onClick: function() { setDetailSymbol(ticker.symbol); }, style:{ display:"flex", alignItems:"center", padding:"9px 16px 5px", cursor:"pointer" } },
+                React.createElement("div", { style:{ width:38, height:38, borderRadius:19, background:tc+"18", border:"1.5px solid "+tc+"30", display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, fontWeight:800, color:tc, flexShrink:0, marginRight:10 } }, ticker.symbol.slice(0,4)),
+                React.createElement("div", { style:{ flex:1, minWidth:0 } },
+                  React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:5 } },
+                    React.createElement("span", { style:{ fontSize:13, fontWeight:700, color:"#fff" } }, ticker.symbol),
+                    React.createElement("span", { style:{ fontSize:7.5, fontWeight:800, padding:"2px 5px", borderRadius:4, background:sc+"18", color:sc, border:"1px solid "+sc+"35" } }, ticker.signal.action + " " + ticker.signal.conf + "%")
+                  ),
+                  React.createElement("div", { style:{ fontSize:10, color:"#6A7585", marginTop:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" } }, ticker.name)
+                ),
+                React.createElement("div", { style:{ margin:"0 8px", flexShrink:0 } },
+                  React.createElement(SparkLine, { prices: ticker.priceHistory, strokeColor: sc })
+                ),
+                React.createElement("div", { style:{ textAlign:"right", minWidth:60, flexShrink:0 } },
+                  React.createElement("div", { style:{ fontSize:13, fontWeight:700, color:"#fff" } }, formatUSD(ticker.price)),
+                  React.createElement("div", { style:{ fontSize:10, fontWeight:600, color: pc.positive ? "#00E676" : "#FF3D57", marginTop:2 } }, pc.text)
+                )
+              ),
+              React.createElement("div", { style:{ display:"flex", gap:7, padding:"0 16px 8px", alignItems:"center" } },
+                React.createElement("button", { onClick: function(e) { handleBuy(ticker, e); }, style:{ flex:1, padding:"7px 0", borderRadius:9, background:"rgba(0,230,118,0.1)", border:"1.5px solid rgba(0,230,118,0.28)", color:"#00E676", fontSize:11, fontWeight:800, cursor:"pointer" } }, "↑ Buy"),
+                React.createElement("button", { onClick: function(e) { handleSell(ticker, e); }, style:{ flex:1, padding:"7px 0", borderRadius:9, background: pos.shares > 0 ? "rgba(255,61,87,0.1)" : "rgba(255,255,255,0.03)", border:"1.5px solid " + (pos.shares > 0 ? "rgba(255,61,87,0.28)" : "rgba(255,255,255,0.06)"), color: pos.shares > 0 ? "#FF3D57" : "#3A4455", fontSize:11, fontWeight:800, cursor: pos.shares > 0 ? "pointer" : "default" } }, "↓ Sell"),
+                pos.shares > 0
+                  ? React.createElement("div", { style:{ display:"flex", flexDirection:"column", justifyContent:"center", minWidth:54, textAlign:"right", flexShrink:0 } },
+                      React.createElement("div", { style:{ fontSize:10, fontWeight:700, color:"#fff" } }, formatUSD(pos.shares * ticker.price)),
+                      React.createElement("div", { style:{ fontSize:9, color: ticker.price >= pos.avgCost ? "#00E676" : "#FF3D57" } }, formatPct(ticker.price, pos.avgCost).text)
+                    )
+                  : !isDef && React.createElement("button", { onClick: function() { removeFromWatchlist(ticker.symbol); }, style:{ padding:"5px 9px", borderRadius:8, background:"rgba(255,61,87,0.08)", border:"1px solid rgba(255,61,87,0.2)", color:"#FF3D57", fontSize:10, cursor:"pointer", flexShrink:0 } }, "✕")
+              )
+            );
+          }),
+
+          // Add More CTA
+          React.createElement("div", { onClick: function() { setShowSearch(true); }, style:{ margin:"12px 16px 4px", padding:13, borderRadius:14, background:"rgba(0,201,255,0.04)", border:"1.5px dashed rgba(0,201,255,0.22)", display:"flex", alignItems:"center", justifyContent:"center", gap:10, cursor:"pointer" } },
+            React.createElement("span", { style:{ fontSize:19 } }, "🔍"),
+            React.createElement("div", null,
+              React.createElement("div", { style:{ fontSize:13, fontWeight:700, color:"#00C9FF" } }, "Search & Add Stocks"),
+              React.createElement("div", { style:{ fontSize:11, color:"#6A7585", marginTop:1 } }, allAvailable.length + "+ US stocks, ETFs & crypto")
+            )
+          ),
+          React.createElement("div", { style:{ height:10 } })
+        ),
+
+        // ═══ DETAIL VIEW ════════════════════════════════════════════════════
+        activeTab === "home" && detailSymbol && selectedTicker && React.createElement("div", { style:{ flex:1, overflowY:"auto", paddingBottom:20 } },
+          React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:10, padding:"46px 16px 12px" } },
+            React.createElement("button", { onClick: function() { setDetailSymbol(null); }, style:{ width:34, height:34, borderRadius:17, background:"#1C1E22", border:"1px solid rgba(255,255,255,0.08)", color:"#fff", fontSize:18, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 } }, "‹"),
+            React.createElement("div", { style:{ flex:1 } },
+              React.createElement("div", { style:{ fontSize:16, fontWeight:700, color:"#fff" } }, selectedTicker.symbol),
+              React.createElement("div", { style:{ fontSize:10, color:"#6A7585" } }, selectedTicker.name)
+            )
+          ),
+          React.createElement("div", { style:{ padding:"0 16px 10px" } },
+            React.createElement("div", { style:{ fontSize:36, fontWeight:700, color:"#fff", letterSpacing:-1 } }, formatUSD(selectedTicker.price)),
+            React.createElement("div", { style:{ fontSize:12, fontWeight:600, color: formatPct(selectedTicker.price, selectedTicker.base).positive ? "#00E676" : "#FF3D57", marginTop:4 } },
+              formatPct(selectedTicker.price, selectedTicker.base).text + " all time"
+            )
+          ),
+          React.createElement("div", { style:{ background:"#141618", margin:"0 16px 12px", borderRadius:12, overflow:"hidden", padding:"10px 0 6px" } },
+            React.createElement(DetailChart, { prices: selectedTicker.priceHistory, signal: selectedTicker.signal })
+          ),
+          (function() {
+            const sig = selectedTicker.signal;
+            const sc  = sig.color;
+            const isBuyA  = sig.action === "BUY";
+            const isSellA = sig.action === "SELL";
+            const pos = holdings[selectedTicker.symbol] || { shares:0, avgCost: selectedTicker.base };
+            return React.createElement("div", { style:{ margin:"0 16px 12px", background: isBuyA ? "rgba(0,230,118,0.08)" : isSellA ? "rgba(255,61,87,0.08)" : "rgba(255,184,0,0.06)", border:"1.5px solid "+sc+"40", borderRadius:14, padding:14 } },
+              React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:12, marginBottom:12 } },
+                React.createElement("div", { style:{ width:42, height:42, borderRadius:21, background:sc, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, fontWeight:900, color:"#000", boxShadow:"0 0 16px "+sc+"50" } },
+                  isBuyA ? "▲" : isSellA ? "▼" : "◆"
+                ),
+                React.createElement("div", null,
+                  React.createElement("div", { style:{ fontSize:20, fontWeight:900, color:sc } }, sig.action),
+                  React.createElement("div", { style:{ fontSize:10, color:"#6A7585" } }, sig.conf + "% confidence · AI + Technical")
+                )
+              ),
+              React.createElement("div", { style:{ display:"flex", gap:9 } },
+                React.createElement("button", { onClick: function(e) { handleBuy(selectedTicker, e); }, style:{ flex:1, padding:"11px 0", borderRadius:50, background:"#00E676", border:"none", color:"#000", fontSize:13, fontWeight:800, cursor:"pointer" } }, "↑ Buy " + selectedTicker.symbol),
+                React.createElement("button", { onClick: function(e) { handleSell(selectedTicker, e); }, style:{ flex:1, padding:"11px 0", borderRadius:50, background: pos.shares > 0 ? "rgba(255,61,87,0.12)" : "#1C1E22", border:"1px solid " + (pos.shares > 0 ? "rgba(255,61,87,0.3)" : "rgba(255,255,255,0.07)"), color: pos.shares > 0 ? "#FF3D57" : "#4A5060", fontSize:13, fontWeight:800, cursor: pos.shares > 0 ? "pointer" : "default" } }, "↓ Sell All")
+              ),
+              pos.shares > 0 && React.createElement("div", { style:{ display:"flex", justifyContent:"center", gap:12, marginTop:8 } },
+                React.createElement("span", { style:{ fontSize:10, color:"#6A7585" } },
+                  "Held: ", React.createElement("strong", { style:{ color:"#fff" } }, pos.shares.toFixed(4))
+                ),
+                React.createElement("span", { style:{ fontSize:10, fontWeight:700, color: selectedTicker.price >= pos.avgCost ? "#00E676" : "#FF3D57" } },
+                  formatPct(selectedTicker.price, pos.avgCost).text
+                )
+              )
+            );
+          })(),
+          React.createElement("div", { style:{ margin:"0 16px 10px", background:"rgba(255,184,0,0.05)", border:"1px solid rgba(255,184,0,0.18)", borderRadius:10, padding:"10px 13px" } },
+            React.createElement("div", { style:{ fontSize:9.5, color:"#FFB800" } }, "⚠️ ", React.createElement("strong", null, "Demo Only."), " Prices are simulated. Not financial advice.")
+          )
+        ),
+
+        // ═══ PORTFOLIO TAB ══════════════════════════════════════════════════
+        activeTab === "portfolio" && React.createElement("div", { style:{ flex:1, overflowY:"auto", paddingBottom:20 } },
+          React.createElement("div", { style:{ padding:"46px 16px 12px" } },
+            React.createElement("div", { style:{ fontSize:20, fontWeight:800, color:"#fff" } }, "Portfolio"),
+            React.createElement("div", { style:{ fontSize:34, fontWeight:700, color:"#fff", letterSpacing:-1, marginTop:10 } }, formatUSD(portfolioValue)),
+            React.createElement("div", { style:{ fontSize:13, fontWeight:600, color: portfolioChange.positive ? "#00E676" : "#FF3D57", marginTop:4 } },
+              (portfolioChange.positive ? "▲" : "▼") + " " + formatUSD(Math.abs(portfolioValue - portfolioCost)) + " (" + portfolioChange.text + ")"
+            )
+          ),
+          tickerData.map(function(ticker) {
+            const pos = holdings[ticker.symbol] || { shares:0, avgCost: ticker.base };
+            const pv  = pos.shares * ticker.price;
+            const pc  = pos.avgCost > 0 ? formatPct(ticker.price, pos.avgCost) : { text:"—", positive:true };
+            const tc  = getTickerColor(ticker.symbol);
+            return React.createElement("div", { key: ticker.symbol, onClick: function() { setDetailSymbol(ticker.symbol); setActiveTab("home"); }, style:{ display:"flex", alignItems:"center", padding:"11px 16px", borderBottom:"1px solid rgba(255,255,255,0.05)", cursor:"pointer" } },
+              React.createElement("div", { style:{ width:38, height:38, borderRadius:19, background:tc+"18", border:"1.5px solid "+tc+"30", display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, fontWeight:800, color:tc, flexShrink:0, margin
+           Right:10 } }, ticker.symbol.slice(0,4)),
+              React.createElement("div", { style:{ flex:1 } },
+                React.createElement("div", { style:{ fontSize:13, fontWeight:700, color:"#fff" } }, ticker.symbol),
+                React.createElement("div", { style:{ fontSize:10, color:"#6A7585", marginTop:1 } }, pos.shares.toFixed(4) + " shares")
+              ),
+              React.createElement("div", { style:{ textAlign:"right" } },
+                React.createElement("div", { style:{ fontSize:13, fontWeight:700, color:"#fff" } }, formatUSD(pv)),
+                React.createElement("div", { style:{ fontSize:11, color: pc.positive ? "#00E676" : "#FF3D57", fontWeight:600, marginTop:1 } }, pc.text)
+              )
+            );
+          })
+        ),
+
+        // ═══ JOURNAL TAB ════════════════════════════════════════════════════
+        activeTab === "journal" && React.createElement("div", { style:{ flex:1, overflowY:"auto", paddingBottom:20 } },
+          React.createElement("div", { style:{ padding:"46px 16px 14px", fontSize:20, fontWeight:800, color:"#fff" } }, "Trade Journal"),
+          tradeLog.length === 0
+            ? React.createElement("div", { style:{ textAlign:"center", padding:"40px 0" } },
+                React.createElement("div", { style:{ fontSize:36, marginBottom:10 } }, "📝"),
+                React.createElement("div", { style:{ fontSize:13, color:"#6A7585" } }, "Trades log here automatically.")
+              )
+            : tradeLog.map(function(entry) {
+                const ec = entry.type === "BUY" ? "#00E676" : "#FF3D57";
+                return React.createElement("div", { key: entry.id, style:{ display:"flex", alignItems:"center", gap:10, padding:"10px 16px", borderBottom:"1px solid rgba(255,255,255,0.05)" } },
+                  React.createElement("div", { style:{ width:32, height:32, borderRadius:16, background:ec+"18", border:"1.5px solid "+ec+"35", display:"flex", alignItems:"center", justifyContent:"center", color:ec, fontSize:13, fontWeight:800, flexShrink:0 } },
+                    entry.type === "BUY" ? "↑" : "↓"
+                  ),
+                  React.createElement("div", { style:{ flex:1 } },
+                    React.createElement("div", { style:{ fontSize:12, fontWeight:700, color:"#fff" } },
+                      React.createElement("span", { style:{ color:ec } }, entry.type),
+                      " " + entry.qty + " " + entry.symbol + " @ " + entry.price
+                    ),
+                    React.createElement("div", { style:{ fontSize:10, color:"#6A7585", marginTop:1 } }, entry.time + " · " + entry.total)
+                  )
+                );
+              })
+        ),
+
+        // ═══ BOTTOM NAV ═════════════════════════════════════════════════════
+        React.createElement("div", { style:{ display:"flex", background:"rgba(8,10,12,0.97)", borderTop:"1px solid rgba(255,255,255,0.07)", flexShrink:0 } },
+          [
+            { id:"home",      icon:"📈", label:"Home"      },
+            { id:"portfolio", icon:"💼", label:"Portfolio" },
+            { id:"journal",   icon:"📓", label:"Journal"   },
+          ].map(function(nav) {
+            return React.createElement("button", {
+              key: nav.id,
+              onClick: function() { setActiveTab(nav.id); if (nav.id !== "home") setDetailSymbol(null); },
+              style:{ flex:1, background:"none", border:"none", cursor:"pointer", padding:"9px 0 7px", display:"flex", flexDirection:"column", alignItems:"center", gap:2 }
+            },
+              React.createElement("span", { style:{ fontSize:18 } }, nav.icon),
+              React.createElement("span", { style:{ fontSize:9, fontWeight:600, color: activeTab === nav.id ? "#00E676" : "#6A7585" } }, nav.label),
+              activeTab === nav.id && React.createElement("div", { style:{ width:4, height:4, borderRadius:2, background:"#00E676" } })
+            );
+          })
+        )
+
+      ); // end App return
+    } // end App function
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(React.createElement(App));
+
+  </script>
+</body>
+</html>
+   
