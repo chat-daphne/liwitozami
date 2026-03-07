@@ -751,8 +751,8 @@
             const pc  = pos.avgCost > 0 ? formatPct(ticker.price, pos.avgCost) : { text:"—", positive:true };
             const tc  = getTickerColor(ticker.symbol);
             return React.createElement("div", { key: ticker.symbol, onClick: function() { setDetailSymbol(ticker.symbol); setActiveTab("home"); }, style:{ display:"flex", alignItems:"center", padding:"11px 16px", borderBottom:"1px solid rgba(255,255,255,0.05)", cursor:"pointer" } },
-              React.createElement("div", { style:{ width:38, height:38, borderRadius:19, background:tc+"18", border:"1.5px solid "+tc+"30", display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, fontWeight:800, color:tc, flexShrink:0, margin
-           Right:10 } }, ticker.symbol.slice(0,4)),
+              React.createElement("div", { style:{ width:38, height:38, borderRadius:19, background:tc+"18", border:"1.5px solid "+tc+"30", display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, fontWeight:800, color:tc, flexShrink:0, marginRight:10 } }, 
+			  ticker.symbol.slice(0,4)),
               React.createElement("div", { style:{ flex:1 } },
                 React.createElement("div", { style:{ fontSize:13, fontWeight:700, color:"#fff" } }, ticker.symbol),
                 React.createElement("div", { style:{ fontSize:10, color:"#6A7585", marginTop:1 } }, pos.shares.toFixed(4) + " shares")
