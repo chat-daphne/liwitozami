@@ -1,0 +1,2261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>LIWITOZAMI — Real-Time AI Trading Signals</title>
+  <meta name="description" content="Professional AI-powered stock trading signals with real-time market data" />
+  <meta name="theme-color" content="#080A0C" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  
+  <style>
+    * { 
+      box-sizing: border-box; 
+      margin: 0; 
+      padding: 0; 
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    
+    html, body { 
+      background: #080A0C; 
+      height: 100%; 
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    ::-webkit-scrollbar { display: none; }
+    
+    @keyframes fadeUp { 
+      from { opacity:0; transform:translateY(12px); } 
+      to { opacity:1; transform:none; } 
+    }
+    
+    @keyframes pulse { 
+      0%,100% { opacity:1; } 
+      50% { opacity:0.4; } 
+    }
+    
+    @keyframes slideIn {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+    
+    input, button, textarea { 
+      font-family: inherit;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    
+    .safe-area-top { padding-top: env(safe-area-inset-top); }
+    .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+    
+    @media (hover: hover) {
+      button:hover { opacity: 0.9; }
+    }
+    
+    .loading-skeleton {
+      background: linear-gradient(90deg, #1C1E22 25%, #252830 50%, #1C1E22 75%);
+      background-size: 200% 100%;
+      animation: loading 1.5s infinite;
+    }
+    
+    @keyframes loading {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+    // ═══ CONFIGURATION ═══════════════════════════════════════════════════════
+    const CONFIG = {
+      API_BASE: window.location.origin,
+      UPDATE_INTERVAL: 5000, // 5 seconds for real-time updates
+      WEBSOCKET_URL: null, // Will be set dynamically
+      MASSIVE_API_KEY: 'demo', // Replace with actual key
+      BROKER: 'alpaca', // alpaca, ibkr, td
+      PAPER_TRADING: true
+    };
+
+    // Real market data endpoints
+    const MARKET_DATA_APIS = {
+      stocks: 'https://api.twelvedata.com/quote',
+      crypto: 'https://api.coingecko.com/api/v3/simple/price',
+      forex: 'https://api.exchangerate-api.com/v4/latest/USD'
+    };
+
+    // ═══ MARKET DATA SERVICE ═════════════════════════════════════════════════
+    class MarketDataService {
+      constructor() {
+        this.cache = new Map();
+        this.subscribers = new Map();
+        this.ws = null;
+      }
+
+      async getQuote(symbol) {
+        // Check cache first (5 second TTL)
+        const cached = this.cache.get(symbol);
+        if (cached && Date.now() - cached.timestamp < 5000) {
+          return cached.data;
+        }
+
+        try {
+          // For crypto
+          if (['BTC', 'ETH', 'SOL', 'DOGE', 'XRP'].includes(symbol)) {
+            const cryptoMap = {
+              BTC: 'bitcoin',
+              ETH: 'ethereum',
+              SOL: 'solana',
+              DOGE: 'dogecoin',
+              XRP: 'ripple'
+            };
+            
+            const response = await axios.get(MARKET_DATA_APIS.crypto, {
+              params: {
+                ids: cryptoMap[symbol],
+                vs_currencies: 'usd',
+                include_24hr_change: true,
+                include_last_updated_at: true
+              }
+            });
+            
+            const data = response.data[cryptoMap[symbol]];
+            const quote = {
+              symbol,
+              price: data.usd,
+              change: data.usd_24h_change,
+              timestamp: Date.now()
+            };
+            
+            this.cache.set(symbol, { data: quote, timestamp: Date.now() });
+            return quote;
+          }
+          
+          // For stocks - using demo data for now
+          // In production, use Massive API or other real-time provider
+          const demoPrice = this.generateRealisticPrice(symbol);
+          const quote = {
+            symbol,
+            price: demoPrice,
+            change: (Math.random() - 0.5) * 5,
+            volume: Math.floor(Math.random() * 10000000),
+            timestamp: Date.now()
+          };
+          
+          this.cache.set(symbol, { data: quote, timestamp: Date.now() });
+          return quote;
+          
+        } catch (error) {
+          console.error(`Failed to fetch quote for ${symbol}:`, error);
+          // Return last known price or demo data
+          return {
+            symbol,
+            price: this.generateRealisticPrice(symbol),
+            change: 0,
+            timestamp: Date.now()
+          };
+        }
+      }
+
+      generateRealisticPrice(symbol) {
+        // Base prices for different stocks
+        const basePrices = {
+          AAPL: 189.50, TSLA: 248.30, NVDA: 875.20, MSFT: 415.80,
+          META: 512.30, AMZN: 198.70, GOOGL: 178.40, NFLX: 628.00
+        };
+        
+        const base = basePrices[symbol] || 100;
+        const time = Date.now() / 1000;
+        const dayVariation = Math.sin(time / 86400) * 0.02; // Daily trend
+        const hourVariation = Math.sin(time / 3600) * 0.005; // Hourly fluctuation
+        const noise = (Math.random() - 0.5) * 0.002; // Random noise
+        
+        return base * (1 + dayVariation + hourVariation + noise);
+      }
+
+      connectWebSocket() {
+        if (this.ws) return;
+        
+        // In production, connect to real WebSocket feed
+        // this.ws = new WebSocket('wss://stream.marketdata.com');
+        
+        // Simulate WebSocket updates
+        setInterval(() => {
+          this.subscribers.forEach((callback, symbol) => {
+            this.getQuote(symbol).then(callback);
+          });
+        }, CONFIG.UPDATE_INTERVAL);
+      }
+
+      subscribe(symbol, callback) {
+        this.subscribers.set(symbol, callback);
+        this.connectWebSocket();
+        // Immediate update
+        this.getQuote(symbol).then(callback);
+      }
+
+      unsubscribe(symbol) {
+        this.subscribers.delete(symbol);
+      }
+    }
+
+    const marketData = new MarketDataService();
+
+    // ═══ TRADING SERVICE ═════════════════════════════════════════════════════
+    class TradingService {
+      constructor() {
+        this.positions = new Map();
+        this.orders = [];
+        this.balance = 0;
+      }
+
+      async executeOrder(order) {
+        try {
+          // In production, send to broker API
+          const response = await axios.post(`${CONFIG.API_BASE}/api/orders`, {
+            ...order,
+            broker: CONFIG.BROKER,
+            paper: CONFIG.PAPER_TRADING
+          });
+          
+          return response.data;
+        } catch (error) {
+          // For demo, simulate order execution
+          const simulatedOrder = {
+            id: `ORD${Date.now()}`,
+            ...order,
+            status: 'filled',
+            filled_at: new Date().toISOString(),
+            filled_price: order.price * (1 + (Math.random() - 0.5) * 0.001)
+          };
+          
+          this.orders.push(simulatedOrder);
+          return simulatedOrder;
+        }
+      }
+
+      async getPositions() {
+        try {
+          const response = await axios.get(`${CONFIG.API_BASE}/api/positions`);
+          return response.data;
+        } catch (error) {
+          // Return demo positions
+          return Array.from(this.positions.values());
+        }
+      }
+
+      async getBalance() {
+        try {
+          const response = await axios.get(`${CONFIG.API_BASE}/api/account`);
+          return response.data.cash;
+        } catch (error) {
+          return this.balance || 10000; // Demo balance
+        }
+      }
+    }
+
+    const trading = new TradingService();
+
+    // ═══ TECHNICAL INDICATORS ════════════════════════════════════════════════
+    const TechnicalAnalysis = {
+      EMA(prices, period) {
+        if (prices.length < period) return prices[prices.length - 1] || 0;
+        const k = 2 / (period + 1);
+        let ema = prices.slice(0, period).reduce((a, b) => a + b) / period;
+        
+        for (let i = period; i < prices.length; i++) {
+          ema = prices[i] * k + ema * (1 - k);
+        }
+        return ema;
+      },
+
+      RSI(prices, period = 14) {
+        if (prices.length < period + 1) return 50;
+        
+        const changes = [];
+        for (let i = 1; i < prices.length; i++) {
+          changes.push(prices[i] - prices[i - 1]);
+        }
+        
+        const gains = changes.slice(-period).filter(x => x > 0);
+        const losses = changes.slice(-period).filter(x => x < 0).map(Math.abs);
+        
+        const avgGain = gains.length ? gains.reduce((a, b) => a + b) / period : 0;
+        const avgLoss = losses.length ? losses.reduce((a, b) => a + b) / period : 0;
+        
+        if (avgLoss === 0) return 100;
+        const rs = avgGain / avgLoss;
+        return 100 - (100 / (1 + rs));
+      },
+
+      BollingerBands(prices, period = 20, stdDev = 2) {
+        if (prices.length < period) {
+          const last = prices[prices.length - 1] || 0;
+          return { upper: last, middle: last, lower: last };
+        }
+        
+        const slice = prices.slice(-period);
+        const mean = slice.reduce((a, b) => a + b) / period;
+        const variance = slice.reduce((sum, price) => sum + Math.pow(price - mean, 2), 0) / period;
+        const std = Math.sqrt(variance);
+        
+        return {
+          upper: mean + (stdDev * std),
+          middle: mean,
+          lower: mean - (stdDev * std)
+        };
+      },
+
+      MACD(prices, fast = 12, slow = 26, signal = 9) {
+        if (prices.length < slow) return { macd: 0, signal: 0, histogram: 0 };
+        
+        const emaFast = this.EMA(prices, fast);
+        const emaSlow = this.EMA(prices, slow);
+        const macdLine = emaFast - emaSlow;
+        
+        // For simplicity, using current MACD as signal
+        return {
+          macd: macdLine,
+          signal: macdLine * 0.9,
+          histogram: macdLine * 0.1
+        };
+      },
+
+      generateSignal(price, prices, volume) {
+        const ema9 = this.EMA(prices, 9);
+        const ema21 = this.EMA(prices, 21);
+        const rsi = this.RSI(prices);
+        const bb = this.BollingerBands(prices);
+        const macd = this.MACD(prices);
+        
+        let score = 0;
+        let signals = [];
+        
+        // Trend following
+        if (ema9 > ema21) {
+          score += 2;
+          signals.push('EMA Bullish');
+        } else {
+          score -= 2;
+          signals.push('EMA Bearish');
+        }
+        
+        // Momentum
+        if (rsi < 30) {
+          score += 3;
+          signals.push('RSI Oversold');
+        } else if (rsi > 70) {
+          score -= 3;
+          signals.push('RSI Overbought');
+        }
+        
+        // Volatility
+        if (price <= bb.lower) {
+          score += 2;
+          signals.push('Below BB');
+        } else if (price >= bb.upper) {
+          score -= 2;
+          signals.push('Above BB');
+        }
+        
+        // MACD
+        if (macd.histogram > 0) {
+          score += 1;
+          signals.push('MACD Positive');
+        } else {
+          score -= 1;
+          signals.push('MACD Negative');
+        }
+        
+        // Volume confirmation (if available)
+        if (volume && volume > 1000000) {
+          score = score * 1.2;
+          signals.push('High Volume');
+        }
+        
+        // Generate recommendation
+        const confidence = Math.min(Math.abs(score) * 10 + 50, 95);
+        
+        if (score >= 4) {
+          return { action: 'BUY', confidence, score, signals, color: '#00E676' };
+        } else if (score <= -4) {
+          return { action: 'SELL', confidence, score, signals, color: '#FF3D57' };
+        } else {
+          return { action: 'HOLD', confidence: 50 + Math.abs(score) * 5, score, signals, color: '#FFB800' };
+        }
+      }
+    };
+
+    // ═══ UTILITY FUNCTIONS ═══════════════════════════════════════════════════
+    const Utils = {
+      formatCurrency(value) {
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }).format(value);
+      },
+
+      formatNumber(value, decimals = 2) {
+        return new Intl.NumberFormat('en-US', {
+          minimumFractionDigits: decimals,
+          maximumFractionDigits: decimals
+        }).format(value);
+      },
+
+      formatPercent(value) {
+        const formatted = Math.abs(value).toFixed(2);
+        return (value >= 0 ? '+' : '-') + formatted + '%';
+      },
+
+      formatCompactNumber(value) {
+        return new Intl.NumberFormat('en-US', {
+          notation: 'compact',
+          compactDisplay: 'short'
+        }).format(value);
+      },
+
+      getTimeAgo(timestamp) {
+        const seconds = Math.floor((Date.now() - timestamp) / 1000);
+        if (seconds < 60) return `${seconds}s ago`;
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes}m ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h ago`;
+        return `${Math.floor(hours / 24)}d ago`;
+      },
+
+      generateChartData(prices, width, height) {
+        if (!prices || prices.length < 2) return null;
+        
+        const padding = { top: 10, right: 10, bottom: 10, left: 10 };
+        const chartWidth = width - padding.left - padding.right;
+        const chartHeight = height - padding.top - padding.bottom;
+        
+        const minPrice = Math.min(...prices);
+        const maxPrice = Math.max(...prices);
+        const priceRange = maxPrice - minPrice || 1;
+        
+        const points = prices.map((price, i) => {
+          const x = padding.left + (i / (prices.length - 1)) * chartWidth;
+          const y = padding.top + (1 - (price - minPrice) / priceRange) * chartHeight;
+          return { x, y, price };
+        });
+        
+        const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        
+        return { points, pathData, minPrice, maxPrice };
+      }
+    };
+
+    // ═══ COMPONENTS ══════════════════════════════════════════════════════════
+    const Chart = React.memo(({ data, width = 360, height = 180, showGrid = true, animated = true }) => {
+      const svgRef = useRef(null);
+      const [isAnimated, setIsAnimated] = useState(false);
+      
+      useEffect(() => {
+        if (animated && !isAnimated) {
+          setTimeout(() => setIsAnimated(true), 100);
+        }
+      }, [animated, isAnimated]);
+      
+      if (!data || data.prices.length < 2) return null;
+      
+      const chartData = Utils.generateChartData(data.prices, width, height);
+      if (!chartData) return null;
+      
+      const { points, pathData, minPrice, maxPrice } = chartData;
+      const lastPoint = points[points.length - 1];
+      const isPositive = data.change >= 0;
+      const color = isPositive ? '#00E676' : '#FF3D57';
+      
+      return (
+        <svg ref={svgRef} width={width} height={height} style={{ display: 'block' }}>
+          <defs>
+            <linearGradient id={`gradient-${data.symbol}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+              <stop offset="100%" stopColor={color} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          
+          {showGrid && (
+            <g opacity="0.1">
+              {[0, 0.25, 0.5, 0.75, 1].map(i => {
+                const y = 10 + i * (height - 20);
+                return (
+                  <line key={i} x1="10" y1={y} x2={width - 10} y2={y} stroke="#fff" strokeDasharray="2,4" />
+                );
+              })}
+            </g>
+          )}
+          
+          <path
+            d={`${pathData} L ${width - 10} ${height - 10} L 10 ${height - 10} Z`}
+            fill={`url(#gradient-${data.symbol})`}
+            opacity={isAnimated ? 1 : 0}
+            style={{ transition: 'opacity 0.5s ease' }}
+          />
+          
+          <path
+            d={pathData}
+            fill="none"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={isAnimated ? 1 : 0}
+            style={{ transition: 'opacity 0.5s ease' }}
+          />
+          
+          {isAnimated && (
+            <>
+              <circle cx={lastPoint.x} cy={lastPoint.y} r="4" fill={color} />
+              <circle cx={lastPoint.x} cy={lastPoint.y} r="8" fill={color} opacity="0.3">
+                <animate attributeName="r" values="8;12;8" dur="2s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.3;0.1;0.3" dur="2s" repeatCount="indefinite" />
+              </circle>
+            </>
+          )}
+          
+          <text x="10" y="25" fontSize="10" fill="#6A7585">
+            {Utils.formatCurrency(maxPrice)}
+          </text>
+          <text x="10" y={height - 15} fontSize="10" fill="#6A7585">
+            {Utils.formatCurrency(minPrice)}
+          </text>
+        </svg>
+      );
+    });
+
+    const SparkLine = React.memo(({ prices, width = 60, height = 30, color }) => {
+      if (!prices || prices.length < 2) return null;
+      
+      const min = Math.min(...prices);
+      const max = Math.max(...prices);
+      const range = max - min || 1;
+      
+      const points = prices.map((price, i) => {
+        const x = (i / (prices.length - 1)) * width;
+        const y = height - ((price - min) / range) * height;
+        return `${x},${y}`;
+      }).join(' ');
+      
+      return (
+        <svg width={width} height={height} style={{ display: 'block' }}>
+          <polyline
+            points={points}
+            fill="none"
+            stroke={color || '#00C9FF'}
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
+    });
+
+    const LoadingSpinner = () => (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '40px',
+        animation: 'fadeUp 0.3s ease'
+      }}>
+        <div style={{
+          width: '32px',
+          height: '32px',
+          border: '3px solid rgba(0, 201, 255, 0.1)',
+          borderTop: '3px solid #00C9FF',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+
+    const Toast = ({ message, type = 'info' }) => {
+      const colors = {
+        success: '#00E676',
+        error: '#FF3D57',
+        info: '#00C9FF',
+        warning: '#FFB800'
+      };
+      
+      return (
+        <div style={{
+          position: 'fixed',
+          top: 'env(safe-area-inset-top, 20px)',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: '#1C1E22',
+          border: `1px solid ${colors[type]}40`,
+          borderRadius: '50px',
+          padding: '12px 20px',
+          fontSize: '13px',
+          fontWeight: '600',
+          color: colors[type],
+          zIndex: 9999,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          animation: 'fadeUp 0.3s ease',
+          maxWidth: '90vw',
+          textAlign: 'center'
+        }}>
+          {message}
+        </div>
+      );
+    };
+
+    // ═══ MAIN APP COMPONENT ══════════════════════════════════════════════════
+    function App() {
+      // State Management
+      const [activeTab, setActiveTab] = useState('market');
+      const [selectedStock, setSelectedStock] = useState(null);
+      const [portfolio, setPortfolio] = useState({
+        cash: 10000,
+        positions: new Map(),
+        totalValue: 10000
+      });
+      const [watchlist, setWatchlist] = useState(['AAPL', 'TSLA', 'NVDA', 'MSFT', 'BTC', 'ETH']);
+      const [marketData, setMarketData] = useState(new Map());
+      const [priceHistory, setPriceHistory] = useState(new Map());
+      const [orders, setOrders] = useState([]);
+      const [toast, setToast] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [showAddFunds, setShowAddFunds] = useState(false);
+      const [showSearch, setShowSearch] = useState(false);
+      const [searchQuery, setSearchQuery] = useState('');
+      const [tradeModal, setTradeModal] = useState(null);
+      
+      // Refs
+      const updateInterval = useRef(null);
+      const wsConnection = useRef(null);
+      
+      // Available stocks
+      const AVAILABLE_STOCKS = [
+        { symbol: 'AAPL', name: 'Apple Inc.', sector: 'Technology' },
+        { symbol: 'TSLA', name: 'Tesla Inc.', sector: 'Automotive' },
+        { symbol: 'NVDA', name: 'NVIDIA Corp.', sector: 'Technology' },
+        { symbol: 'MSFT', name: 'Microsoft Corp.', sector: 'Technology' },
+        { symbol: 'AMZN', name: 'Amazon.com Inc.', sector: 'E-Commerce' },
+        { symbol: 'GOOGL', name: 'Alphabet Inc.', sector: 'Technology' },
+        { symbol: 'META', name: 'Meta Platforms', sector: 'Technology' },
+        { symbol: 'NFLX', name: 'Netflix Inc.', sector: 'Entertainment' },
+        { symbol: 'BTC', name: 'Bitcoin', sector: 'Crypto' },
+        { symbol: 'ETH', name: 'Ethereum', sector: 'Crypto' },
+        { symbol: 'SOL', name: 'Solana', sector: 'Crypto' },
+        { symbol: 'DOGE', name: 'Dogecoin', sector: 'Crypto' },
+        { symbol: 'JPM', name: 'JPMorgan Chase', sector: 'Finance' },
+        { symbol: 'BAC', name: 'Bank of America', sector: 'Finance' },
+        { symbol: 'V', name: 'Visa Inc.', sector: 'Finance' },
+        { symbol: 'DIS', name: 'Walt Disney', sector: 'Entertainment' },
+        { symbol: 'AMD', name: 'AMD', sector: 'Technology' },
+        { symbol: 'PYPL', name: 'PayPal', sector: 'Finance' },
+        { symbol: 'SQ', name: 'Block Inc.', sector: 'Finance' },
+        { symbol: 'COIN', name: 'Coinbase', sector: 'Crypto' }
+      ];
+      
+      // Initialize market data
+      useEffect(() => {
+        const initializeData = async () => {
+          setLoading(true);
+          
+          // Load saved data
+          const savedWatchlist = localStorage.getItem('watchlist');
+          if (savedWatchlist) {
+            setWatchlist(JSON.parse(savedWatchlist));
+          }
+          
+          const savedPortfolio = localStorage.getItem('portfolio');
+          if (savedPortfolio) {
+            const parsed = JSON.parse(savedPortfolio);
+            setPortfolio({
+              ...parsed,
+              positions: new Map(parsed.positions)
+            });
+          }
+          
+          // Fetch initial quotes
+          await updateMarketData();
+          
+          setLoading(false);
+        };
+        
+        initializeData();
+        
+        // Set up real-time updates
+        updateInterval.current = setInterval(updateMarketData, CONFIG.UPDATE_INTERVAL);
+        
+        return () => {
+          if (updateInterval.current) {
+            clearInterval(updateInterval.current);
+          }
+        };
+      }, []);
+      
+      // Update market data
+      const updateMarketData = useCallback(async () => {
+        const symbols = [...watchlist];
+        const newData = new Map();
+        const newHistory = new Map(priceHistory);
+        
+        for (const symbol of symbols) {
+          try {
+            const quote = await marketData.getQuote(symbol);
+            newData.set(symbol, quote);
+            
+            // Update price history
+            const history = newHistory.get(symbol) || [];
+            const updatedHistory = [...history, quote.price].slice(-60);
+            newHistory.set(symbol, updatedHistory);
+          } catch (error) {
+            console.error(`Failed to update ${symbol}:`, error);
+          }
+        }
+        
+        setMarketData(newData);
+        setPriceHistory(newHistory);
+        
+        // Update portfolio value
+        updatePortfolioValue(newData);
+      }, [watchlist, priceHistory]);
+      
+      // Update portfolio value
+      const updatePortfolioValue = useCallback((data) => {
+        let totalValue = portfolio.cash;
+        
+        portfolio.positions.forEach((position, symbol) => {
+          const quote = data.get(symbol);
+          if (quote) {
+            totalValue += position.shares * quote.price;
+          }
+        });
+        
+        setPortfolio(prev => ({ ...prev, totalValue }));
+      }, [portfolio.cash, portfolio.positions]);
+      
+      // Show toast notification
+      const showToast = useCallback((message, type = 'info') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 4000);
+      }, []);
+      
+      // Execute trade
+      const executeTrade = useCallback(async (symbol, shares, side) => {
+        try {
+          const quote = marketData.get(symbol);
+          if (!quote) {
+            showToast('Unable to get current price', 'error');
+            return;
+          }
+          
+          const totalCost = shares * quote.price;
+          
+          if (side === 'buy' && totalCost > portfolio.cash) {
+            showToast('Insufficient funds', 'error');
+            return;
+          }
+          
+          const order = await trading.executeOrder({
+            symbol,
+            shares,
+            side,
+            type: 'market',
+            price: quote.price
+          });
+          
+          // Update portfolio
+          const newPositions = new Map(portfolio.positions);
+          const currentPosition = newPositions.get(symbol) || { shares: 0, avgCost: 0 };
+          
+          if (side === 'buy') {
+            const newShares = currentPosition.shares + shares;
+            const newAvgCost = ((currentPosition.shares * currentPosition.avgCost) + (shares * quote.price)) / newShares;
+            newPositions.set(symbol, { shares: newShares, avgCost: newAvgCost });
+            
+            setPortfolio(prev => ({
+              ...prev,
+              cash: prev.cash - totalCost,
+              positions: newPositions
+            }));
+          } else {
+            const newShares = Math.max(0, currentPosition.shares - shares);
+            if (newShares === 0) {
+              newPositions.delete(symbol);
+            } else {
+              newPositions.set(symbol, { ...currentPosition, shares: newShares });
+            }
+            
+            setPortfolio(prev => ({
+              ...prev,
+              cash: prev.cash + totalCost,
+              positions: newPositions
+            }));
+          }
+          
+          // Add to orders
+          setOrders(prev => [order, ...prev].slice(0, 100));
+          
+          // Save to localStorage
+          localStorage.setItem('portfolio', JSON.stringify({
+            cash: portfolio.cash,
+            positions: Array.from(newPositions.entries()),
+            totalValue: portfolio.totalValue
+          }));
+          
+          showToast(
+            `${side === 'buy' ? 'Bought' : 'Sold'} ${shares} ${symbol} at ${Utils.formatCurrency(quote.price)}`,
+            'success'
+          );
+          
+          setTradeModal(null);
+        } catch (error) {
+          showToast('Trade failed: ' + error.message, 'error');
+        }
+      }, [marketData, portfolio, showToast]);
+      
+      // Add to watchlist
+      const addToWatchlist = useCallback((symbol) => {
+        if (watchlist.includes(symbol)) {
+          showToast('Already in watchlist', 'warning');
+          return;
+        }
+        
+        const newWatchlist = [...watchlist, symbol];
+        setWatchlist(newWatchlist);
+        localStorage.setItem('watchlist', JSON.stringify(newWatchlist));
+        showToast(`Added ${symbol} to watchlist`, 'success');
+        setShowSearch(false);
+        setSearchQuery('');
+      }, [watchlist, showToast]);
+      
+      // Remove from watchlist
+      const removeFromWatchlist = useCallback((symbol) => {
+        const newWatchlist = watchlist.filter(s => s !== symbol);
+        setWatchlist(newWatchlist);
+        localStorage.setItem('watchlist', JSON.stringify(newWatchlist));
+        showToast(`Removed ${symbol} from watchlist`, 'info');
+      }, [watchlist, showToast]);
+      
+      // Search results
+      const searchResults = useMemo(() => {
+        if (!searchQuery) return [];
+        
+        const query = searchQuery.toLowerCase();
+        return AVAILABLE_STOCKS.filter(stock => 
+          stock.symbol.toLowerCase().includes(query) ||
+          stock.name.toLowerCase().includes(query) ||
+          stock.sector.toLowerCase().includes(query)
+        ).slice(0, 10);
+      }, [searchQuery]);
+      
+      // Render stock card
+      const renderStockCard = useCallback((symbol) => {
+        const quote = marketData.get(symbol);
+        const history = priceHistory.get(symbol) || [];
+        const position = portfolio.positions.get(symbol);
+        const stock = AVAILABLE_STOCKS.find(s => s.symbol === symbol);
+        
+        if (!quote || !stock) return null;
+        
+        const signal = TechnicalAnalysis.generateSignal(quote.price, history, quote.volume);
+        const changePercent = quote.change || 0;
+        const isPositive = changePercent >= 0;
+        
+        return (
+          <div
+            key={symbol}
+            onClick={() => setSelectedStock(symbol)}
+            style={{
+              background: '#141618',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '16px',
+              padding: '16px',
+              marginBottom: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              animation: 'fadeUp 0.4s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '22px',
+                background: `${signal.color}15`,
+                border: `2px solid ${signal.color}30`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '10px',
+                fontWeight: '800',
+                color: signal.color,
+                marginRight: '12px'
+              }}>
+                {symbol.slice(0, 4)}
+              </div>
+              
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
+                    {symbol}
+                  </span>
+                  <span style={{
+                    fontSize: '9px',
+                    fontWeight: '700',
+                    padding: '3px 8px',
+                    borderRadius: '12px',
+                    background: `${signal.color}20`,
+                    color: signal.color,
+                    border: `1px solid ${signal.color}40`
+                  }}>
+                    {signal.action} {signal.confidence}%
+                  </span>
+                </div>
+                <div style={{ fontSize: '12px', color: '#6A7585', marginTop: '2px' }}>
+                  {stock.name}
+                </div>
+              </div>
+              
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '18px', fontWeight: '700', color: '#fff' }}>
+                  {Utils.formatCurrency(quote.price)}
+                </div>
+                <div style={{
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  color: isPositive ? '#00E676' : '#FF3D57',
+                  marginTop: '2px'
+                }}>
+                  {Utils.formatPercent(changePercent)}
+                </div>
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ flex: 1 }}>
+                <SparkLine prices={history} color={signal.color} />
+              </div>
+              
+              {position && (
+                <div style={{
+                  padding: '6px 12px',
+                  background: 'rgba(0, 230, 118, 0.1)',
+                  border: '1px solid rgba(0, 230, 118, 0.3)',
+                  borderRadius: '20px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  color: '#00E676'
+                }}>
+                  {position.shares} shares
+                </div>
+              )}
+            </div>
+            
+            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTradeModal({ symbol, side: 'buy', quote, signal });
+                }}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '12px',
+                  background: 'rgba(0, 230, 118, 0.1)',
+                  border: '1.5px solid rgba(0, 230, 118, 0.3)',
+                  color: '#00E676',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                Buy
+              </button>
+              
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (position && position.shares > 0) {
+                    setTradeModal({ symbol, side: 'sell', quote, signal, position });
+                  } else {
+                    showToast('No position to sell', 'warning');
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '12px',
+                  background: position ? 'rgba(255, 61, 87, 0.1)' : 'rgba(255,255,255,0.03)',
+                  border: `1.5px solid ${position ? 'rgba(255, 61, 87, 0.3)' : 'rgba(255,255,255,0.08)'}`,
+                  color: position ? '#FF3D57' : '#4A5060',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  cursor: position ? 'pointer' : 'not-allowed'
+                }}
+              >
+                Sell
+              </button>
+              
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeFromWatchlist(symbol);
+                }}
+                style={{
+                  padding: '10px',
+                  borderRadius: '12px',
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1.5px solid rgba(255,255,255,0.08)',
+                  color: '#6A7585',
+                  fontSize: '16px',
+                  cursor: 'pointer'
+                }}
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        );
+      }, [marketData, priceHistory, portfolio.positions, showToast, removeFromWatchlist]);
+      
+      // Render main content
+      return (
+        <div style={{
+          background: '#080A0C',
+          minHeight: '100vh',
+          maxWidth: '430px',
+          margin: '0 auto',
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative'
+        }}>
+          {toast && <Toast message={toast.message} type={toast.type} />}
+          
+          {/* Header */}
+          <div className="safe-area-top" style={{
+            background: 'rgba(8, 10, 12, 0.95)',
+            backdropFilter: 'blur(20px)',
+            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            position: 'sticky',
+            top: 0,
+            zIndex: 100
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '16px'
+            }}>
+              <div>
+                <div style={{
+                  fontSize: '24px',
+                  fontWeight: '900',
+                  color: '#fff',
+                  letterSpacing: '-0.5px'
+                }}>
+                  LIWITOZAMI
+                </div>
+                <div style={{
+                  fontSize: '11px',
+                  color: '#6A7585',
+                  marginTop: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <span style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '3px',
+                    background: '#00E676',
+                    animation: 'pulse 2s infinite'
+                  }} />
+                  Real-Time AI Trading
+                </div>
+              </div>
+              
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <button
+                  onClick={() => setShowAddFunds(true)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '20px',
+                    background: 'rgba(0, 201, 255, 0.1)',
+                    border: '1px solid rgba(0, 201, 255, 0.3)',
+                    color: '#00C9FF',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ${Utils.formatNumber(portfolio.cash, 0)}
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          {/* Portfolio Summary */}
+          <div style={{ padding: '16px' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #141618 0%, #1C1E22 100%)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '20px',
+              padding: '20px',
+              position: 'relative',
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                position: 'absolute',
+                top: '-50%',
+                right: '-50%',
+                width: '200%',
+                height: '200%',
+                background: 'radial-gradient(circle, rgba(0, 201, 255, 0.1) 0%, transparent 70%)',
+                pointerEvents: 'none'
+              }} />
+              
+              <div style={{ position: 'relative' }}>
+                <div style={{ fontSize: '12px', color: '#6A7585', marginBottom: '4px' }}>
+                  Total Portfolio Value
+                </div>
+                <div style={{ fontSize: '32px', fontWeight: '700', color: '#fff', letterSpacing: '-1px' }}>
+                  {Utils.formatCurrency(portfolio.totalValue)}
+                </div>
+                <div style={{
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: portfolio.totalValue >= 10000 ? '#00E676' : '#FF3D57',
+                  marginTop: '8px'
+                }}>
+                  {Utils.formatPercent(((portfolio.totalValue - 10000) / 10000) * 100)}
+                  <span style={{ color: '#6A7585', marginLeft: '8px' }}>
+                    All Time
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Tabs */}
+          <div style={{
+            display: 'flex',
+            padding: '0 16px',
+            marginBottom: '16px',
+            gap: '8px'
+          }}>
+            {[
+              { id: 'market', label: 'Market', icon: '📈' },
+              { id: 'portfolio', label: 'Portfolio', icon: '💼' },
+              { id: 'orders', label: 'Orders', icon: '📋' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '16px',
+                  background: activeTab === tab.id ? 'rgba(0, 201, 255, 0.1)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${activeTab === tab.id ? 'rgba(0, 201, 255, 0.3)' : 'rgba(255,255,255,0.08)'}`,
+                  color: activeTab === tab.id ? '#00C9FF' : '#6A7585',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <span>{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          
+          {/* Content */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 80px' }}>
+            {loading ? (
+              <LoadingSpinner />
+            ) : (
+              <>
+                {activeTab === 'market' && (
+                  <>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '16px'
+                    }}>
+                      <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#fff' }}>
+                        Watchlist
+                      </h2>
+                      <button
+                        onClick={() => setShowSearch(true)}
+                        style={{
+                          padding: '8px 16px',
+                          borderRadius: '20px',
+                          background: 'rgba(0, 230, 118, 0.1)',
+                          border: '1px solid rgba(0, 230, 118, 0.3)',
+                          color: '#00E676',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        + Add Stock
+                      </button>
+                    </div>
+                    
+                    {watchlist.length === 0 ? (
+                      <div style={{
+                        textAlign: 'center',
+                        padding: '60px 20px',
+                        color: '#6A7585'
+                      }}>
+                        <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
+                        <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>
+                          No stocks in watchlist
+                        </div>
+                        <div style={{ fontSize: '14px' }}>
+                          Add stocks to start tracking
+                        </div>
+                      </div>
+                    ) : (
+                      watchlist.map(renderStockCard)
+                    )}
+                  </>
+                )}
+                
+                {activeTab === 'portfolio' && (
+                  <>
+                    <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#fff', marginBottom: '16px' }}>
+                      Holdings
+                    </h2>
+                    
+                    {portfolio.positions.size === 0 ? (
+                      <div style={{
+                        textAlign: 'center',
+                        padding: '60px 20px',
+                        color: '#6A7585'
+                      }}>
+                        <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
+                        <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>
+                          No positions yet
+                        </div>
+                        <div style={{ fontSize: '14px' }}>
+                          Start trading to build your portfolio
+                        </div>
+                      </div>
+                    ) : (
+                      Array.from(portfolio.positions.entries()).map(([symbol, position]) => {
+                        const quote = marketData.get(symbol);
+                        if (!quote) return null;
+                        
+                        const currentValue = position.shares * quote.price;
+                        const costBasis = position.shares * position.avgCost;
+                        const gain = currentValue - costBasis;
+                        const gainPercent = (gain / costBasis) * 100;
+                        
+                        return (
+                          <div
+                            key={symbol}
+                            style={{
+                              background: '#141618',
+                              border: '1px solid rgba(255,255,255,0.08)',
+                              borderRadius: '16px',
+                              padding: '16px',
+                              marginBottom: '12px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                              <div>
+                                <div style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
+                                  {symbol}
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#6A7585', marginTop: '2px' }}>
+                                  {position.shares} shares @ {Utils.formatCurrency(position.avgCost)}
+                                </div>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
+                                  {Utils.formatCurrency(currentValue)}
+                                </div>
+                                <div style={{
+                                  fontSize: '12px',
+                                  fontWeight: '600',
+                                  color: gain >= 0 ? '#00E676' : '#FF3D57',
+                                  marginTop: '2px'
+                                }}>
+                                  {gain >= 0 ? '+' : ''}{Utils.formatCurrency(Math.abs(gain))} ({Utils.formatPercent(gainPercent)})
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <button
+                              onClick={() => setTradeModal({ symbol, side: 'sell', quote, position })}
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                borderRadius: '12px',
+                                background: 'rgba(255, 61, 87, 0.1)',
+                                border: '1.5px solid rgba(255, 61, 87, 0.3)',
+                                color: '#FF3D57',
+                                fontSize: '12px',
+                                fontWeight: '700',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Sell Position
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </>
+                )}
+                
+                {activeTab === 'orders' && (
+                  <>
+                    <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#fff', marginBottom: '16px' }}>
+                      Recent Orders
+                    </h2>
+                    
+                    {orders.length === 0 ? (
+                      <div style={{
+                        textAlign: 'center',
+                        padding: '60px 20px',
+                        color: '#6A7585'
+                      }}>
+                        <div style={{ fontSize: '48px', marginBottom: '16px' }}>📝</div>
+                        <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>
+                          No orders yet
+                        </div>
+                        <div style={{ fontSize: '14px' }}>
+                          Your trading history will appear here
+                        </div>
+                      </div>
+                    ) : (
+                      orders.map(order => (
+                        <div
+                          key={order.id}
+                          style={{
+                            background: '#141618',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '16px',
+                            padding: '16px',
+                            marginBottom: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px'
+                          }}
+                        >
+                          <div style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '20px',
+                            background: order.side === 'buy' ? 'rgba(0, 230, 118, 0.1)' : 'rgba(255, 61, 87, 0.1)',
+                            border: `2px solid ${order.side === 'buy' ? 'rgba(0, 230, 118, 0.3)' : 'rgba(255, 61, 87, 0.3)'}`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '16px',
+                            fontWeight: '800',
+                            color: order.side === 'buy' ? '#00E676' : '#FF3D57'
+                          }}>
+                            {order.side === 'buy' ? '↑' : '↓'}
+                          </div>
+                          
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                              {order.side === 'buy' ? 'Bought' : 'Sold'} {order.shares} {order.symbol}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#6A7585', marginTop: '2px' }}>
+                              @ {Utils.formatCurrency(order.filled_price || order.price)} • {Utils.getTimeAgo(new Date(order.filled_at).getTime())}
+                            </div>
+                          </div>
+                          
+                          <div style={{
+                            fontSize: '14px',
+                            fontWeight: '700',
+                            color: order.side === 'buy' ? '#FF3D57' : '#00E676'
+                          }}>
+                            {order.side === 'buy' ? '-' : '+'}{Utils.formatCurrency(order.shares * (order.filled_price || order.price))}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+          
+          {/* Bottom Navigation */}
+          <div className="safe-area-bottom" style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: 'rgba(8, 10, 12, 0.95)',
+            backdropFilter: 'blur(20px)',
+            borderTop: '1px solid rgba(255,255,255,0.08)'
+          }}>
+            <div style={{
+              maxWidth: '430px',
+              margin: '0 auto',
+              display: 'flex',
+              padding: '8px'
+            }}>
+              {[
+                { id: 'market', icon: '📈', label: 'Market' },
+                { id: 'portfolio', icon: '💼', label: 'Portfolio' },
+                { id: 'orders', icon: '📋', label: 'Orders' }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    flex: 1,
+                    background: 'none',
+                    border: 'none',
+                    padding: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    color: activeTab === tab.id ? '#00C9FF' : '#6A7585',
+                    transition: 'color 0.2s ease'
+                  }}
+                >
+                  <span style={{ fontSize: '20px' }}>{tab.icon}</span>
+                  <span style={{ fontSize: '10px', fontWeight: '600' }}>{tab.label}</span>
+                  {activeTab === tab.id && (
+                    <div style={{
+                      width: '4px',
+                      height: '4px',
+                      borderRadius: '2px',
+                      background: '#00C9FF'
+                    }} />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          {/* Stock Detail Modal */}
+          {selectedStock && (
+            <div
+              onClick={() => setSelectedStock(null)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,0.9)',
+                backdropFilter: 'blur(20px)',
+                zIndex: 1000,
+                display: 'flex',
+                alignItems: 'flex-end'
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: '100%',
+                  maxWidth: '430px',
+                  margin: '0 auto',
+                  background: '#1C1E22',
+                  borderRadius: '24px 24px 0 0',
+                  padding: '24px',
+                  maxHeight: '90vh',
+                  overflowY: 'auto',
+                  animation: 'slideIn 0.3s ease'
+                }}
+              >
+                <div style={{
+                  width: '40px',
+                  height: '4px',
+                  background: 'rgba(255,255,255,0.2)',
+                  borderRadius: '2px',
+                  margin: '0 auto 24px'
+                }} />
+                
+                {(() => {
+                  const quote = marketData.get(selectedStock);
+                  const history = priceHistory.get(selectedStock) || [];
+                  const stock = AVAILABLE_STOCKS.find(s => s.symbol === selectedStock);
+                  const position = portfolio.positions.get(selectedStock);
+                  
+                  if (!quote || !stock) return null;
+                  
+                  const signal = TechnicalAnalysis.generateSignal(quote.price, history, quote.volume);
+                  
+                  return (
+                    <>
+                      <div style={{ marginBottom: '24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                          <div>
+                            <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#fff' }}>
+                              {selectedStock}
+                            </h2>
+                            <div style={{ fontSize: '14px', color: '#6A7585', marginTop: '4px' }}>
+                              {stock.name}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '28px', fontWeight: '700', color: '#fff' }}>
+                              {Utils.formatCurrency(quote.price)}
+                            </div>
+                            <div style={{
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              color: quote.change >= 0 ? '#00E676' : '#FF3D57',
+                              marginTop: '4px'
+                            }}>
+                              {Utils.formatPercent(quote.change)}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div style={{
+                          background: '#141618',
+                          borderRadius: '16px',
+                          padding: '16px',
+                          marginBottom: '16px'
+                        }}>
+                          <Chart
+                            data={{ symbol: selectedStock, prices: history, change: quote.change }}
+                            width={382}
+                            height={200}
+                            showGrid={true}
+                            animated={true}
+                          />
+                        </div>
+                        
+                        {/* AI Signal Card */}
+                        <div style={{
+                          background: `${signal.color}10`,
+                          border: `2px solid ${signal.color}30`,
+                          borderRadius: '16px',
+                          padding: '16px',
+                          marginBottom: '16px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                            <div style={{
+                              width: '48px',
+                              height: '48px',
+                              borderRadius: '24px',
+                              background: signal.color,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '24px',
+                              fontWeight: '900',
+                              color: '#000'
+                            }}>
+                              {signal.action === 'BUY' ? '↑' : signal.action === 'SELL' ? '↓' : '→'}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '20px', fontWeight: '800', color: signal.color }}>
+                                {signal.action}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#6A7585' }}>
+                                {signal.confidence}% Confidence • AI Analysis
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div style={{ fontSize: '12px', color: '#8A8F98', lineHeight: '1.6' }}>
+                            <strong>Signals:</strong> {signal.signals.join(' • ')}
+                          </div>
+                        </div>
+                        
+                        {/* Position Info */}
+                        {position && (
+                          <div style={{
+                            background: 'rgba(0, 230, 118, 0.05)',
+                            border: '1px solid rgba(0, 230, 118, 0.2)',
+                            borderRadius: '16px',
+                            padding: '16px',
+                            marginBottom: '16px'
+                          }}>
+                            <div style={{ fontSize: '12px', color: '#6A7585', marginBottom: '8px' }}>
+                              Your Position
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <div>
+                                <div style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
+                                  {position.shares} shares
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#6A7585', marginTop: '2px' }}>
+                                  Avg Cost: {Utils.formatCurrency(position.avgCost)}
+                                </div>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
+                                  {Utils.formatCurrency(position.shares * quote.price)}
+                                </div>
+                                <div style={{
+                                  fontSize: '12px',
+                                  fontWeight: '600',
+                                  color: quote.price >= position.avgCost ? '#00E676' : '#FF3D57',
+                                  marginTop: '2px'
+                                }}>
+                                  {Utils.formatPercent(((quote.price - position.avgCost) / position.avgCost) * 100)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Trade Buttons */}
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                          <button
+                            onClick={() => {
+                              setSelectedStock(null);
+                              setTradeModal({ symbol: selectedStock, side: 'buy', quote, signal });
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: '16px',
+                              borderRadius: '16px',
+                              background: '#00E676',
+                              border: 'none',
+                              color: '#000',
+                              fontSize: '14px',
+                              fontWeight: '800',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Buy {selectedStock}
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              if (position && position.shares > 0) {
+                                setSelectedStock(null);
+                                setTradeModal({ symbol: selectedStock, side: 'sell', quote, signal, position });
+                              } else {
+                                showToast('No position to sell', 'warning');
+                              }
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: '16px',
+                              borderRadius: '16px',
+                              background: position ? '#FF3D57' : 'rgba(255,255,255,0.05)',
+                              border: 'none',
+                              color: position ? '#fff' : '#4A5060',
+                              fontSize: '14px',
+                              fontWeight: '800',
+                              cursor: position ? 'pointer' : 'not-allowed'
+                            }}
+                          >
+                            Sell {position ? 'All' : 'Position'}
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+          
+          {/* Trade Modal */}
+          {tradeModal && (
+            <div
+              onClick={() => setTradeModal(null)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,0.9)',
+                backdropFilter: 'blur(20px)',
+                zIndex: 1001,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '20px'
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: '100%',
+                  maxWidth: '380px',
+                  background: '#1C1E22',
+                  borderRadius: '24px',
+                  padding: '24px',
+                  animation: 'fadeUp 0.3s ease'
+                }}
+              >
+                <h3 style={{
+                  fontSize: '20px',
+                  fontWeight: '700',
+                  color: '#fff',
+                  marginBottom: '20px',
+                  textAlign: 'center'
+                }}>
+                  {tradeModal.side === 'buy' ? 'Buy' : 'Sell'} {tradeModal.symbol}
+                </h3>
+                
+                <div style={{
+                  background: '#141618',
+                  borderRadius: '16px',
+                  padding: '16px',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <span style={{ fontSize: '12px', color: '#6A7585' }}>Current Price</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                      {Utils.formatCurrency(tradeModal.quote.price)}
+                    </span>
+                  </div>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <span style={{ fontSize: '12px', color: '#6A7585' }}>Shares</span>
+                    <input
+                      type="number"
+                      defaultValue={tradeModal.side === 'sell' ? tradeModal.position?.shares : 1}
+                      min="0.0001"
+                      step="0.0001"
+                      max={tradeModal.side === 'sell' ? tradeModal.position?.shares : undefined}
+                      style={{
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        padding: '6px 12px',
+                        color: '#fff',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        width: '120px',
+                        textAlign: 'right'
+                      }}
+                      onChange={(e) => {
+                        const shares = parseFloat(e.target.value) || 0;
+                        const total = shares * tradeModal.quote.price;
+                        document.getElementById('trade-total').textContent = Utils.formatCurrency(total);
+                      }}
+                    />
+                  </div>
+                  
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    paddingTop: '12px',
+                    borderTop: '1px solid rgba(255,255,255,0.08)'
+                  }}>
+                    <span style={{ fontSize: '12px', color: '#6A7585' }}>
+                      {tradeModal.side === 'buy' ? 'Total Cost' : 'Total Value'}
+                    </span>
+                    <span id="trade-total" style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
+                      {Utils.formatCurrency(
+                        tradeModal.side === 'sell' 
+                          ? (tradeModal.position?.shares || 0) * tradeModal.quote.price
+                          : tradeModal.quote.price
+                      )}
+                    </span>
+                  </div>
+                </div>
+                
+                {tradeModal.side === 'buy' && (
+                  <div style={{
+                    background: 'rgba(255, 184, 0, 0.05)',
+                    border: '1px solid rgba(255, 184, 0, 0.2)',
+                    borderRadius: '12px',
+                    padding: '12px',
+                    marginBottom: '20px',
+                    fontSize: '11px',
+                    color: '#FFB800'
+                  }}>
+                    <strong>Available Cash:</strong> {Utils.formatCurrency(portfolio.cash)}
+                  </div>
+                )}
+                
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => {
+                      const sharesInput = document.querySelector('input[type="number"]');
+                      const shares = parseFloat(sharesInput.value) || 0;
+                      
+                      if (shares <= 0) {
+                        showToast('Invalid share amount', 'error');
+                        return;
+                      }
+                      
+                      if (tradeModal.side === 'buy' && shares * tradeModal.quote.price > portfolio.cash) {
+                        showToast('Insufficient funds', 'error');
+                        return;
+                      }
+                      
+                      executeTrade(tradeModal.symbol, shares, tradeModal.side);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '16px',
+                      borderRadius: '16px',
+                      background: tradeModal.side === 'buy' ? '#00E676' : '#FF3D57',
+                      border: 'none',
+                      color: tradeModal.side === 'buy' ? '#000' : '#fff',
+                      fontSize: '14px',
+                      fontWeight: '800',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Confirm {tradeModal.side === 'buy' ? 'Buy' : 'Sell'}
+                  </button>
+                  
+                  <button
+                    onClick={() => setTradeModal(null)}
+                    style={{
+                      flex: 1,
+                      padding: '16px',
+                      borderRadius: '16px',
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      color: '#8A8F98',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Add Funds Modal */}
+          {showAddFunds && (
+            <div
+              onClick={() => setShowAddFunds(false)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,0.9)',
+                backdropFilter: 'blur(20px)',
+                zIndex: 1002,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '20px'
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: '100%',
+                  maxWidth: '380px',
+                  background: '#1C1E22',
+                  borderRadius: '24px',
+                  padding: '24px',
+                  animation: 'fadeUp 0.3s ease'
+                }}
+              >
+                <h3 style={{
+                  fontSize: '20px',
+                  fontWeight: '700',
+                  color: '#fff',
+                  marginBottom: '20px',
+                  textAlign: 'center'
+                }}>
+                  💰 Add Funds
+                </h3>
+                
+                <div style={{
+                  background: '#141618',
+                  borderRadius: '16px',
+                  padding: '16px',
+                  marginBottom: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px'
+                }}>
+                  <span style={{ fontSize: '24px', fontWeight: '700', color: '#00E676' }}>$</span>
+                  <input
+                    type="number"
+                    placeholder="0.00"
+                    autoFocus
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      outline: 'none',
+                      color: '#fff',
+                      fontSize: '28px',
+                      fontWeight: '700',
+                      width: '100%'
+                    }}
+                  />
+                </div>
+                
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '8px',
+                  marginBottom: '20px'
+                }}>
+                  {[100, 500, 1000, 2500, 5000, 10000].map(amount => (
+                    <button
+                      key={amount}
+                      onClick={() => {
+                        document.querySelector('input[type="number"]').value = amount;
+                      }}
+                      style={{
+                        padding: '12px',
+                        borderRadius: '12px',
+                        background: 'rgba(0, 201, 255, 0.1)',
+                        border: '1px solid rgba(0, 201, 255, 0.3)',
+                        color: '#00C9FF',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ${Utils.formatCompactNumber(amount)}
+                    </button>
+                  ))}
+                </div>
+                
+                <button
+                  onClick={() => {
+                    const input = document.querySelector('input[type="number"]');
+                    const amount = parseFloat(input.value) || 0;
+                    
+                    if (amount <= 0) {
+                      showToast('Please enter a valid amount', 'error');
+                      return;
+                    }
+                    
+                    setPortfolio(prev => ({ ...prev, cash: prev.cash + amount }));
+                    showToast(`Added ${Utils.formatCurrency(amount)} to your account`, 'success');
+                    setShowAddFunds(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '16px',
+                    borderRadius: '16px',
+                    background: '#00E676',
+                    border: 'none',
+                    color: '#000',
+                    fontSize: '14px',
+                    fontWeight: '800',
+                    cursor: 'pointer',
+                    marginBottom: '12px'
+                  }}
+                >
+                  Add Funds
+                </button>
+                
+                <button
+                  onClick={() => setShowAddFunds(false)}
+                  style={{
+                    width: '100%',
+                    padding: '16px',
+                    borderRadius: '16px',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: '#8A8F98',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Search Modal */}
+          {showSearch && (
+            <div
+              onClick={() => setShowSearch(false)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,0.9)',
+                backdropFilter: 'blur(20px)',
+                zIndex: 1003,
+                display: 'flex',
+                alignItems: 'flex-end'
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: '100%',
+                  maxWidth: '430px',
+                  margin: '0 auto',
+                  background: '#1C1E22',
+                  borderRadius: '24px 24px 0 0',
+                  padding: '24px',
+                  maxHeight: '80vh',
+                  overflowY: 'auto',
+                  animation: 'slideIn 0.3s ease'
+                }}
+              >
+                <div style={{
+                  width: '40px',
+                  height: '4px',
+                  background: 'rgba(255,255,255,0.2)',
+                  borderRadius: '2px',
+                  margin: '0 auto 24px'
+                }} />
+                
+                <h3 style={{
+                  fontSize: '20px',
+                  fontWeight: '700',
+                  color: '#fff',
+                  marginBottom: '16px'
+                }}>
+                  Add to Watchlist
+                </h3>
+                
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  background: '#141618',
+                  borderRadius: '16px',
+                  padding: '12px 16px',
+                  marginBottom: '20px'
+                }}>
+                  <span style={{ fontSize: '16px' }}>🔍</span>
+                  <input
+                    type="text"
+                    placeholder="Search stocks..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    autoFocus
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      outline: 'none',
+                      color: '#fff',
+                      fontSize: '14px',
+                      width: '100%'
+                    }}
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#6A7585',
+                        fontSize: '18px',
+                        cursor: 'pointer',
+                        padding: '0'
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                
+                {!searchQuery ? (
+                  <>
+                    <div style={{ marginBottom: '20px' }}>
+                      <div style={{
+                        fontSize: '12px',
+                        color: '#6A7585',
+                        fontWeight: '600',
+                        marginBottom: '12px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px'
+                      }}>
+                        Popular Stocks
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {['AMZN', 'GOOGL', 'NFLX', 'AMD', 'DIS', 'PYPL'].map(symbol => {
+                          const isInWatchlist = watchlist.includes(symbol);
+                          return (
+                            <button
+                              key={symbol}
+                              onClick={() => !isInWatchlist && addToWatchlist(symbol)}
+                              style={{
+                                padding: '8px 16px',
+                                borderRadius: '20px',
+                                background: isInWatchlist ? 'rgba(0, 230, 118, 0.1)' : 'rgba(255,255,255,0.05)',
+                                border: `1px solid ${isInWatchlist ? 'rgba(0, 230, 118, 0.3)' : 'rgba(255,255,255,0.1)'}`,
+                                color: isInWatchlist ? '#00E676' : '#fff',
+                                fontSize: '12px',
+                                fontWeight: '600',
+                                cursor: isInWatchlist ? 'default' : 'pointer'
+                              }}
+                            >
+                              {isInWatchlist && '✓ '}{symbol}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <div style={{
+                        fontSize: '12px',
+                        color: '#6A7585',
+                        fontWeight: '600',
+                        marginBottom: '12px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px'
+                      }}>
+                        All Sectors
+                      </div>
+                      {['Technology', 'Finance', 'Crypto', 'Entertainment', 'E-Commerce'].map(sector => (
+                        <div key={sector} style={{ marginBottom: '16px' }}>
+                          <div style={{
+                            fontSize: '11px',
+                            color: '#8A8F98',
+                            marginBottom: '8px'
+                          }}>
+                            {sector}
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {AVAILABLE_STOCKS
+                              .filter(stock => stock.sector === sector)
+                              .slice(0, 6)
+                              .map(stock => {
+                                const isInWatchlist = watchlist.includes(stock.symbol);
+                                return (
+                                  <button
+                                    key={stock.symbol}
+                                    onClick={() => !isInWatchlist && addToWatchlist(stock.symbol)}
+                                    style={{
+                                      padding: '6px 12px',
+                                      borderRadius: '16px',
+                                      background: isInWatchlist ? 'rgba(0, 230, 118, 0.08)' : 'rgba(255,255,255,0.03)',
+                                      border: `1px solid ${isInWatchlist ? 'rgba(0, 230, 118, 0.25)' : 'rgba(255,255,255,0.08)'}`,
+                                      color: isInWatchlist ? '#00E676' : '#C8CDD6',
+                                      fontSize: '11px',
+                                      fontWeight: '600',
+                                      cursor: isInWatchlist ? 'default' : 'pointer'
+                                    }}
+                                  >
+                                    {isInWatchlist && '✓ '}{stock.symbol}
+                                  </button>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    {searchResults.length === 0 ? (
+                      <div style={{
+                        textAlign: 'center',
+                        padding: '40px',
+                        color: '#6A7585'
+                      }}>
+                        No results for "{searchQuery}"
+                      </div>
+                    ) : (
+                      searchResults.map(stock => {
+                        const isInWatchlist = watchlist.includes(stock.symbol);
+                        return (
+                          <div
+                            key={stock.symbol}
+                            onClick={() => !isInWatchlist && addToWatchlist(stock.symbol)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              padding: '12px',
+                              borderRadius: '12px',
+                              background: 'rgba(255,255,255,0.03)',
+                              marginBottom: '8px',
+                              cursor: isInWatchlist ? 'default' : 'pointer',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            <div style={{
+                              width: '40px',
+                              height: '40px',
+                              borderRadius: '20px',
+                              background: 'rgba(0, 201, 255, 0.1)',
+                              border: '2px solid rgba(0, 201, 255, 0.3)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '10px',
+                              fontWeight: '800',
+                              color: '#00C9FF',
+                              marginRight: '12px'
+                            }}>
+                              {stock.symbol.slice(0, 4)}
+                            </div>
+                            
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                                {stock.symbol}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#6A7585', marginTop: '2px' }}>
+                                {stock.name} • {stock.sector}
+                              </div>
+                            </div>
+                            
+                            {isInWatchlist ? (
+                              <div style={{
+                                padding: '6px 12px',
+                                borderRadius: '16px',
+                                background: 'rgba(0, 230, 118, 0.1)',
+                                color: '#00E676',
+                                fontSize: '11px',
+                                fontWeight: '600'
+                              }}>
+                                ✓ Added
+                              </div>
+                            ) : (
+                              <div style={{
+                                padding: '6px 16px',
+                                borderRadius: '16px',
+                                background: 'rgba(0, 201, 255, 0.1)',
+                                color: '#00C9FF',
+                                fontSize: '11px',
+                                fontWeight: '600'
+                              }}>
+                                + Add
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Render the app
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  </script>
+</body>
+</html>
